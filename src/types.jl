@@ -1,3 +1,21 @@
+"""
+    KFParms{Zt, Ht, Tt, Rt, Qt}
+
+State-space model parameters for the Kalman filter.
+
+# State Space Model
+```
+y_t = Z * α_t + ε_t,    ε_t ~ N(0, H)
+α_{t+1} = T * α_t + R * η_t,    η_t ~ N(0, Q)
+```
+
+# Fields
+- `Z`: Observation matrix (p × m)
+- `H`: Observation noise covariance (p × p)
+- `T`: State transition matrix (m × m)
+- `R`: State noise selection matrix (m × r)
+- `Q`: State noise covariance (r × r)
+"""
 struct KFParms{Zt, Ht, Tt, Rt, Qt}
     Z::Zt
     H::Ht
@@ -6,134 +24,75 @@ struct KFParms{Zt, Ht, Tt, Rt, Qt}
     Q::Qt
 end
 
-mutable struct KFFiltered{AT, PT, PI, PIX}
-    a::AT
-    P::PT
-    Pstar::PI
-    Pinf::PIX
-    d::Array{Int,1}
-    flagF::Array{Int, 1}
-    hasdiffended::BitArray{1}
+# Size utilities
+numstates(T::AbstractMatrix) = size(T, 1)
+numstates(T::Real) = 1
+
+nummeasur(Z::AbstractMatrix) = size(Z, 1)
+nummeasur(Z::Real) = 1
+
+Base.size(p::KFParms{P}) where P<:Real = (1, 1, 1)
+Base.size(p::KFParms{P}) where P<:AbstractArray = (size(p.Z, 1), size(p.T, 1), size(p.Q, 1))
+
+# ============================================
+# StaticArrays automatic conversion
+# ============================================
+
+"""
+Maximum dimension for automatic conversion to StaticArrays.
+Matrices with max(rows, cols) ≤ STATIC_THRESHOLD are converted.
+"""
+const STATIC_THRESHOLD = 13
+
+"""
+    to_static_if_small(x)
+
+Convert array to StaticArray if dimensions are small enough (≤ STATIC_THRESHOLD).
+Returns the input unchanged if dimensions exceed threshold or if already a StaticArray.
+
+This enables automatic performance optimization for small state-space models
+by using stack-allocated arrays that the compiler can unroll.
+"""
+to_static_if_small(x::Real) = x
+
+function to_static_if_small(x::AbstractVector)
+    n = length(x)
+    n ≤ STATIC_THRESHOLD ? SVector{n}(x) : x
 end
 
-mutable struct KFSmoothed{AT, PT}
-    a::AT
-    V::PT
-    r::AT
-    N::PT
+function to_static_if_small(x::AbstractMatrix)
+    m, n = size(x)
+    (m ≤ STATIC_THRESHOLD && n ≤ STATIC_THRESHOLD) ? SMatrix{m,n}(x) : x
 end
 
-struct KFInitVal{AT, PT}
-    a1::AT
-    P1::PT
-end
+# Already static - pass through unchanged
+to_static_if_small(x::StaticArray) = x
 
-struct KFCache{FF, FI, DD, T}
-    F⁻¹::FF ##  (p x p)
-    F::FI   ##  (p x p)
-    Y::DD   ##  (p)
-    v::Array{T, 1}
-    vp::Array{T, 1}
-    C::Array{T, 2}
-    M::Array{T, 2}
-    ZM::Array{T, 2}
-    TM::Array{T, 2}
-    K::Array{T, 2}
-    KZ::Array{T, 2}
-    KZp::Array{T, 2}
-    L::Array{T, 2}
-    TPL::Array{T, 2}
-    ap::Array{T, 1}
-    Pp::Array{T, 2}
-end
+"""
+    KFParms_static(Z, H, T, R, Q)
 
-struct LinearStateSpace{P<:KFParms, F<:KFFiltered, S<:KFSmoothed,  I<:KFInitVal, C<:KFCache, L<:Array, N<:Base.RefValue{Int64}}
-    p::P
-    f::F
-    s::S
-    i::I
-    c::C
-    loglik::L
-    t::N
-end
+Create KFParms with automatic StaticArrays conversion for small matrices.
 
+Equivalent to `KFParms(to_static_if_small(Z), ...)` for all parameters.
+Use this for potential performance gains when state/observation dimensions are small (≤ 13).
 
-struct SSMOptimPar{T, V, F1, F2, M}
-    Z::T
-    H::T
-    T::T
-    R::T
-    Q::T
-    a1::V
-    P1::T
-    a1!::F1
-    P1!::F2
-    P1inf::M
-    Pstar::M
-end
+# Example
+```julia
+# These become SMatrix automatically
+p = KFParms_static([1.0;;], [1.0;;], [1.0;;], [1.0;;], [1.0;;])
+typeof(p.Z)  # SMatrix{1, 1, Float64, 1}
 
-struct SSMOptimParDual{T, S, M, J, H}
-    Z::Array{T,2}
-    H::Array{T,2}
-    T::Array{T,2}
-    R::Array{T,2}
-    Q::Array{T,2}
-    a1::Array{S,1}
-    P1::Array{T,2}
-    P1inf::M
-    Pstar::M
-    jcfg::J
-    hcfg::H
-end
-
-struct SSMOptimCache{T}
-    v::Array{T, 1}
-    vp::Array{T, 1}
-    C::Array{T, 2}
-    M::Array{T, 1}
-    ZM::Array{T, 1}
-    TM::Array{T, 1}
-    K::Array{T, 1}
-    KZ::Array{T, 1}
-    KZp::Array{T, 1}
-    L::Array{T, 1}
-end
-
-struct SSMOptimCacheDual{T}
-    v::Array{T, 1}
-    vp::Array{T, 1}
-    C::Array{T, 2}
-    M::Array{T, 1}
-    ZM::Array{T, 1}
-    TM::Array{T, 1}
-    K::Array{T, 1}
-    KZ::Array{T, 1}
-    KZp::Array{T, 1}
-    L::Array{T, 1}
-end
-
-struct SSMOptim{M, P, D, F} <:MathProgBase.AbstractNLPEvaluator
-    m::M
-    p::P
-    d::D
-    Y::Matrix{F}
-end
-
-struct OptimSSMScalar{T<:AbstractFloat}
-    par::Array{T, 1}
-    idx::BitArray{1}
-    a1::T
-    P1::T
-    P1inf::T
-    Pstar::T
-    y::Array{T, 1}
-end
-
-struct Masked{FREEIDX, FIXEDIDX, FREEITR, FIXEDITR, P}
-    freeindexes::FREEIDX
-    fixedindexes::FIXEDIDX
-    freeitr::FREEITR
-    fixeditr::FIXEDITR
-    parent::P
-    count::Array{Int64, 1}
+# Large matrices stay as Matrix
+p = KFParms_static(rand(20,20), rand(20,20), rand(20,20), rand(20,20), rand(20,20))
+typeof(p.Z)  # Matrix{Float64}
+```
+"""
+function KFParms_static(Z, H, T, R, Q)
+    KFParms(
+        to_static_if_small(Z),
+        to_static_if_small(H),
+        to_static_if_small(T),
+        to_static_if_small(R),
+        to_static_if_small(Q)
+    )
 end

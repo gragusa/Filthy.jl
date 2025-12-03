@@ -1,404 +1,180 @@
 using Filthy
 using Test
-using StaticArrays
-using BenchmarkTools
-using CSV
+using LinearAlgebra
+using DelimitedFiles
+using ForwardDiff
 
-#=
-Nile data
-==========================#
+# Load Nile data
+nile = readdlm("Nile.csv", ',', Float64)
+y = reshape(nile[:, 1], 1, :)  # 1 x 100 matrix
 
-nile = CSV.read("Nile.csv", allowmissing=:none)
+# MLE estimates from Durbin & Koopman (2012)
+const Z_nile = [1.0;;]
+const H_nile = [15099.0;;]
+const T_nile = [1.0;;]
+const R_nile = [1.0;;]
+const Q_nile = [1469.1;;]
+const a1_nile = [0.0]
+const P1_nile = [1e7;;]
 
-nile = Matrix(nile)
-
-
-# Values from Durbin and Koopman
-# Zn = fill(1.0, (1,1))
-# Hn = fill(15099., (1,1))
-# Rn = fill(1.0, (1,1))
-# Tn = fill(1.0, (1,1))
-# Qn = fill(1469.1, (1,1))
-
-# Values from MLE (inexact, P = 1e07)
-Zn = fill(1.0, (1,1))
-Hn = fill(15099.82, (1,1))
-Rn = fill(1.0, (1,1))
-Tn = fill(1.0, (1,1))
-Qn = fill(1468.487, (1,1))
-
-
-
-Zs = SMatrix{1,1}(Zn)
-Hs = SMatrix{1,1}(Hn)
-Rs = SMatrix{1,1}(Rn)
-Ts = SMatrix{1,1}(Tn)
-Qs = SMatrix{1,1}(Qn)
-
-
-
-
-#=
-Constructors
-=----------=#
-@testset "Constructors (inexact).........." begin
-    @test isa(LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1469.1, 0.0, 10.0^7), LinearStateSpace)
-    @test isa(LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.0^7, (1,1))), LinearStateSpace)
-    @test isa(LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), SMatrix{1,1}(fill(10.0^7, (1,1)))), LinearStateSpace)
-
-    @test_throws AssertionError LinearStateSpace(Zn, Hn, Tn, Rn, Qn, 0.0, fill(10.0^7, (1,1)))
-    @test_throws AssertionError LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], 10.0^7)
-    @test_throws AssertionError LinearStateSpace(Zn, Hn, Tn, Rn, Qn, 0.0, 10.0^7)
-
-    @test_throws AssertionError LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SMatrix{1,1}([0.0]), rand(1,1))
-    @test_throws AssertionError LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SMatrix{1,1}([0.0]), SMatrix{1,1}(fill(10.0^7, (1,1))))
-    @test_throws AssertionError LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), rand(1,1))
-
-    @test_throws AssertionError LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1469.1, [0.0], 10.0^7)
-    @test_throws AssertionError LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1469.1, 0.0, [10.0^7])
-    @test_throws AssertionError LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1469.1, [0.0], [10.0^7])
+@testset "KFParms" begin
+    p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
+    @test p.Z == Z_nile
+    @test p.H == H_nile
+    @test p.T == T_nile
+    @test p.R == R_nile
+    @test p.Q == Q_nile
+    @test size(p) == (1, 1, 1)
 end
 
-@testset "Constructors (exact).........." begin
-    @test isa(LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, 0.0, 10.0^7, P1inf = 1.0), LinearStateSpace)
-    @test isa(LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.0^7, (1,1)), P1inf = fill(1.0, (1,1))), LinearStateSpace)
-    @test isa(LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), SMatrix{1,1}(fill(10.0^7, (1,1)))), LinearStateSpace)
+@testset "kalman_loglik" begin
+    p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
+    ll = kalman_loglik(p, y, a1_nile, P1_nile)
 
-    ss = LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), SMatrix{1,1}(fill(10.0^7, (1,1))), P1inf = SMatrix{1,1}([1.0]))
-    @test isa(ss.f.Pinf[1], StaticArrays.SArray{Tuple{1,1},Float64,2,1})
-    @test isa(ss.f.Pstar[1], StaticArrays.SArray{Tuple{1,1},Float64,2,1})
-    @test ss.f.Pinf[1][1] == 1.0
-    @test ss.f.Pstar[1][1] == 0.0
+    # Log-likelihood should be finite and negative
+    @test isfinite(ll)
+    @test ll < 0
 
-    ss = LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.0^7, (1,1)), P1inf = fill(1.0, (1,1)))
-    @test isa(ss.f.Pinf[1], Array{Float64, 2})
-    @test isa(ss.f.Pstar[1], Array{Float64, 2})
-    @test ss.f.Pinf[1][1] == 1.0
-    @test ss.f.Pstar[1][1] == 0.0
-
-    ss = LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, 0.0, 10.0^7, Pinf = 1.0)
-    @test isa(ss.f.Pinf[1], Float64)
-    @test isa(ss.f.Pstar[1], Float64)
-    @test ss.f.Pinf[1][1] == 1.0
-    @test ss.f.Pstar[1][1] == 0.0
-
-    # @test_throws AssertionError LinearStateSpace(Zn, Hn, Tn, Rn, Qn, 0.0, fill(10.0^7, (1,1)))
-    # @test_throws AssertionError LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], 10.0^7)
-    # @test_throws AssertionError LinearStateSpace(Zn, Hn, Tn, Rn, Qn, 0.0, 10.0^7)
-
-    # @test_throws AssertionError LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SMatrix{1,1}([0.0]), rand(1,1))
-    # @test_throws AssertionError LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SMatrix{1,1}([0.0]), SMatrix{1,1}(fill(10.0^7, (1,1))))
-    # @test_throws AssertionError LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), rand(1,1))
-
-    # @test_throws AssertionError LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, [0.0], 10.^7.)
-    # @test_throws AssertionError LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, 0.0, [10.^7.])
-    # @test_throws AssertionError LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, [0.0], [10.^7.])
-    # @test_throw  AssertionError LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.^7., (1,1)))
+    # With approximate diffuse (P1=1e7), log-likelihood differs from exact diffuse
+    # The value should be in a reasonable range for 100 observations
+    @test ll > -700  # Not too small
+    @test ll < -600  # Not too large
 end
 
+@testset "kalman_loglik AD" begin
+    function ll_wrapper(theta)
+        H = [theta[1];;]
+        Q = [theta[2];;]
+        p = KFParms(Z_nile, H, T_nile, R_nile, Q)
+        return kalman_loglik(p, y, a1_nile, P1_nile)
+    end
 
-#=
-Online version
-=#
+    theta = [15099.0, 1469.1]
+    g = ForwardDiff.gradient(ll_wrapper, theta)
 
-ss_scalar = LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, 0.0, 10.0^7)
-for j in eachindex(nile)
-    Filthy.onlinefilter!(ss_scalar, nile[j])
+    @test length(g) == 2
+    @test all(isfinite.(g))
+
+    # Gradients should be near zero at MLE
+    @test all(abs.(g) .< 1.0)
 end
 
-ss_matrix = LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.0^7, (1,1)))
-for j in eachindex(nile)
-    Filthy.onlinefilter!(ss_matrix, nile[j,:])
+@testset "kalman_loglik_scalar" begin
+    ll = kalman_loglik_scalar(1.0, 15099.0, 1.0, 1.0, 1469.1, 0.0, 1e7, vec(nile))
+
+    @test isfinite(ll)
+    @test ll < 0
+
+    # Should match matrix version
+    p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
+    ll_mat = kalman_loglik(p, y, a1_nile, P1_nile)
+    @test isapprox(ll, ll_mat, rtol=1e-10)
 end
 
-ss_static = LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), SMatrix{1,1}(fill(10.^7., (1,1))))
-for j in eachindex(nile)
-    Filthy.onlinefilter!(ss_static, nile[j,:])
+@testset "kalman_filter_full" begin
+    p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
+    result = kalman_filter_full(p, y, a1_nile, P1_nile)
+
+    @test haskey(result, :loglik)
+    @test haskey(result, :a)
+    @test haskey(result, :P)
+    @test haskey(result, :v)
+    @test haskey(result, :F)
+    @test haskey(result, :K)
+
+    n = size(y, 2)
+    # States have n+1 entries: initial + after each observation
+    @test size(result.a) == (1, n + 1)
+    @test size(result.P) == (1, 1, n + 1)
+    # Innovations have n entries (one per observation)
+    @test size(result.v) == (1, n)
+    @test size(result.F) == (1, 1, n)
+
+    # First state is initial state
+    @test result.a[1, 1] == a1_nile[1]
+    @test result.P[1, 1, 1] == P1_nile[1, 1]
+
+    # Log-likelihood should match kalman_loglik
+    ll_direct = kalman_loglik(p, y, a1_nile, P1_nile)
+    @test isapprox(result.loglik, ll_direct, rtol=1e-10)
 end
 
-@testset "Filter correctness (online)....." begin
-    @test isa(ss_matrix.f.a[1], Vector)
-    @test isa(ss_matrix.f.P[1], Matrix)
+@testset "kalman_smoother" begin
+    p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
+    result = kalman_filter_full(p, y, a1_nile, P1_nile)
 
-    @test isa(ss_scalar.f.a[1], Float64)
-    @test isa(ss_scalar.f.P[1], Float64)
+    alpha_smooth, V_smooth = kalman_smoother(Z_nile, T_nile,
+                                              result.a, result.P,
+                                              result.v, result.F)
 
-    @test isa(ss_static.f.a[1], StaticArray)
-    @test isa(ss_static.f.P[1], StaticMatrix)
+    n = size(y, 2)
+    @test size(alpha_smooth) == (1, n)
+    @test size(V_smooth) == (1, 1, n)
 
-    @test ss_scalar.f.a[1] == ss_matrix.f.a[1][1]
-    @test ss_scalar.f.a[10] == ss_matrix.f.a[10][1]
-    @test ss_scalar.f.a[101] == ss_matrix.f.a[101][1]
+    # Smoothed states should be finite
+    @test all(isfinite.(alpha_smooth))
 
-    @test ss_scalar.f.a[1] == ss_static.f.a[1][1]
-    @test ss_scalar.f.a[10] == ss_static.f.a[10][1]
-    @test ss_scalar.f.a[101] == ss_static.f.a[101][1]
+    # Smoothed variances should be positive
+    @test all(V_smooth .> 0)
 
-    @test ss_scalar.c.F[1]   == ss_static.c.F[1][1]
-    @test ss_scalar.c.F[10]  == ss_static.c.F[10][1]
-    @test ss_scalar.c.F[101] == ss_static.c.F[101][1]
+    # Smoothed variance should be smaller than filtered variance
+    for t in 2:n-1
+        @test V_smooth[1, 1, t] <= result.P[1, 1, t]
+    end
 
-    @test ss_scalar.f.a[1] == 0.0
-    @test ss_scalar.f.a[10] ≈ 1171.22228
-    @test ss_scalar.f.a[101] ≈ 798.3871578
-
-    @test ss_scalar.c.F[2] ≈ 10015099.822227377445
-    @test ss_scalar.c.F[11] ≈ 20635.5495
-    @test ss_scalar.c.F[101] ≈ 20599.87957
-
+    # Reference value at t=100 from D&K Table 2.1
+    @test isapprox(alpha_smooth[1, 100], 798.4, rtol=0.01)
 end
 
+@testset "kalman_smoother AD" begin
+    function smooth_sum(theta)
+        H = [theta[1];;]
+        Q = [theta[2];;]
+        p = KFParms(Z_nile, H, T_nile, R_nile, Q)
+        result = kalman_filter_full(p, y, a1_nile, P1_nile)
+        alpha, V = kalman_smoother(Z_nile, T_nile, result.a, result.P, result.v, result.F)
+        return sum(alpha)
+    end
 
-#=
-Vectorized version
-=#
+    theta = [15099.0, 1469.1]
+    g = ForwardDiff.gradient(smooth_sum, theta)
 
-ss_scalar = LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, 0.0, 10.0^7.)
-Filthy.filter!(ss_scalar, vec(nile))
-
-ss_matrix = LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.0^7, (1,1)))
-Filthy.filter!(ss_matrix, nile')
-
-ss_static = LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), SMatrix{1,1}(fill(10.^7., (1,1))))
-Filthy.filter!(ss_static, nile')
-
-@testset "Filter correctness (offline) [inexact]..." begin
-    @test ss_scalar_vec.f.a[1] == ss_scalar.f.a[1]
-    @test ss_scalar_vec.f.a[10] == ss_scalar.f.a[10]
-    @test ss_scalar_vec.f.a[100] == ss_scalar.f.a[100]
-    @test ss_matrix_vec.f.a[1] == ss_matrix.f.a[1]
-    @test ss_matrix_vec.f.a[10] == ss_matrix.f.a[10]
-    @test ss_matrix_vec.f.a[100] == ss_matrix.f.a[100]
-    @test ss_static_vec.f.a[1] == ss_static.f.a[1]
-    @test ss_static_vec.f.a[10] == ss_static.f.a[10]
-    @test ss_static_vec.f.a[100] == ss_static.f.a[100]
-    @test ss_scalar_vec.f.a[1] == 0.0
-    @test ss_scalar_vec.f.a[10] ≈ 1171.22228
-    @test ss_scalar_vec.f.a[101] ≈ 798.3871578
-    @test ss_scalar_vec.c.F[2] ≈ 10015099.822227377445
-    @test ss_scalar_vec.c.F[11] ≈ 20635.5495
-    @test ss_scalar_vec.c.F[101] ≈ 20599.87957
+    @test length(g) == 2
+    @test all(isfinite.(g))
 end
 
+@testset "kalman_filter_and_smooth" begin
+    p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
+    result = kalman_filter_and_smooth(p, y, a1_nile, P1_nile)
 
+    @test haskey(result, :loglik)
+    @test haskey(result, :a_filtered)
+    @test haskey(result, :P_filtered)
+    @test haskey(result, :alpha_smooth)
+    @test haskey(result, :V_smooth)
 
-
-# Values from MLE (inexact, P = 1)
-
-Zn = fill(1.0, (1,1))
-Hn = fill(15098.654334841132368, (1,1))
-Rn = fill(1.0, (1,1))
-Tn = fill(1.0, (1,1))
-Qn = fill(1469.1632513366273542, (1,1))
-
-Zs = SMatrix{1,1}(Zn)
-Hs = SMatrix{1,1}(Hn)
-Rs = SMatrix{1,1}(Rn)
-Ts = SMatrix{1,1}(Tn)
-Qs = SMatrix{1,1}(Qn)
-
-
-
-ss = LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SVector{1}(0.0), SMatrix{1,1}(fill(0., (1,1))), P1inf = SMatrix{1,1}([1.0]))
-Filthy.filter!(ss, nile')
-
-@testset "Filter correctness (offline) [exact]....." begin
-    @test ss.f.Pinf[1][1] == 1.0
-    @test ss.f.P[1][1] == 0.0
-    @test ss.f.Pstar[1][1] == 0.0
-    @test ss.f.Pstar[2][1] ≈ 16568.307
-    @test ss.f.P[2][1][1] ≈ 16568.307
-    @test ss.f.d==2
-    @test ss.f.hasdiffended[1] == true
-    @test_throws BoundsError ss.f.Pstar[ss.f.d+2]
-    @test ss.loglik[1] ≈ -633.46456
+    # Compare with separate calls
+    ll = kalman_loglik(p, y, a1_nile, P1_nile)
+    @test isapprox(result.loglik, ll, rtol=1e-10)
 end
 
-#=
-Smoothing
----------=#
-Filthy.smooth!(ss)
-@testset "State smoother" begin
-    ss.s.a[1]
+@testset "kalman_smoother_scalar" begin
+    ll, a_pred, P_pred, v, F = kalman_filter_full_scalar(
+        1.0, 15099.0, 1.0, 1.0, 1469.1, 0.0, 1e7, vec(nile))
+
+    alpha, V = kalman_smoother_scalar(1.0, 1.0, a_pred, P_pred, v, F)
+
+    n = length(nile)
+    @test length(alpha) == n
+    @test length(V) == n
+
+    # Should match matrix version
+    p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
+    result = kalman_filter_full(p, y, a1_nile, P1_nile)
+    alpha_mat, V_mat = kalman_smoother(Z_nile, T_nile, result.a, result.P, result.v, result.F)
+
+    @test isapprox(alpha, vec(alpha_mat), rtol=1e-10)
 end
 
-
-
-# @btime begin
-#     ss_scalar = LinearStateSpace(1.0, 15099.82, 1.0, 1.0, 1468.487, 0.0, 10.^7.)
-#     Filthy.filter!(ss_scalar, vec(nile))
-# end
-
-
-
-# # stat_online = @btime begin
-# #     cf_static = Filthy.CovarianceFilter(Zs, Hs, Ts, Rs, Qs, SMatrix{1,1}([0.0]), SMatrix{1,1}(fill(10.^7., (1,1))))
-# #     for j in eachindex(nile)
-# #         filter!(cf_static, [nile[j]])
-# #     end
-# # end
-
-# # stat_vec = @btime begin
-# #     cf_static = Filthy.CovarianceFilter(Zs, Hs, Ts, Rs, Qs, SMatrix{1,1}([0.0]), SMatrix{1,1}(fill(10.^7., (1,1))))
-# #     filter!(cf_static, nile)
-# # end
-
-
-# # @btime begin
-# #     cf_matrix = Filthy.CovarianceFilter(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.^7., (1,1)))
-# #     for j in eachindex(nile)
-# #         filter!(cf_matrix, [nile[j]])
-# #     end
-# # end
-
-# # @test all(cf_scalar.s.att[:,1] .≈ cf_matrix.s.att[:,1])
-# # @test all(cf_static.s.att[:,1] .≈ cf_matrix.s.att[:,1])
-
-
-# # using Plots
-# # gr()
-# # Plots.plot(1:length(nile), cf_static.f.a[2:end,1], color = :darkblue)
-# # plot!(nile, color = :black)
-# # plot!(cf_static.s.a, color = :red)
-# # plot!(cf.s.att[2:end,1]-1.64*sqrt.(cf.s.Ptt[2:end,1]), color = :darkblue, linestyle = :dot)
-# # plot!(cf.s.att[2:end,1]+1.64*sqrt.(cf.s.Ptt[2:end,1]), color = :darkblue, linestyle = :dot)
-
-
-
-
-# p = 2
-# m = 2
-# r = 2
-
-# Z = SMatrix{p,p}([0.2 0.1; 0.4 0.15])
-# H = SMatrix{p,p}([1.2 0.1; 0.1 1.15])
-# T = SMatrix{m,m}([0.92 0.2; -.2 -0.9])
-# R = I
-# Q = SMatrix{m,m}(eye(m))
-# a1 = SVector{2}(zeros(2))
-# P1 = SMatrix{2,2}(1000.*eye(2))
-# Pinf = SMatrix{2,2}(eye(2))
-
-# ss = Filthy.LinearStateSpace(Z, H, T, R, Q, a1, P1, Pinf = Pinf)
-# Filthy.filter!(ss, Y)
-
-# ss2 = Filthy.LinearStateSpace(Z, H, T, R, Q, a1, P1)
-# Filthy.filter!(ss2, Y)
-
-
-
-# srand(12234)
-# Y, a = simulate(ss, 200)
-
-#writecsv("Y.csv", Y')
-
-
-# # for i in 1:200
-# #     filter!(cf, Y[:, i])
-# # end
-
-
-# # @test all(convert(Vector, cf.f.a[10]) .≈ [0.46446643122638098244; 2.13857431622820914896])
-# # @test all(convert(Vector, cf.f.a[100]) .≈ [1.20622036437758350935; -0.39600752142009676415])
-
-# # cf = CovarianceFilter(Zp, Hp, Tp, Rp, Qp, SVector{2}(zeros(2)), SMatrix{2,2}(eye(2)))
-# # filter!(cf, Y')
-# # @test all(convert(Vector, cf.f.a[10]) .≈ [0.46446643122638098244; 2.13857431622820914896])
-# # @test all(convert(Vector, cf.f.a[100]) .≈ [1.20622036437758350935; -0.39600752142009676415])
-
-# # tt = @btime begin
-# #     cf = CovarianceFilter(Zp, Hp, Tp, Rp, Qp, SVector{2}(zeros(2)), SMatrix{2,2}(eye(2)))
-# #     for i in 1:size(Y,2)
-# #         filter!(cf, Y[:, i])
-# #     end
-# # end
-
-# # vv = @btime begin
-# #     cf = CovarianceFilter(Zp, Hp, Tp, Rp, Qp, SVector{2}(zeros(2)), SMatrix{2,2}(eye(2)))
-# #     filter!(cf, Y')
-# # end
-
-
-
-
-# # # using Plots
-# # # gr()
-# # # p1 = Plots.plot(1:size(Y,2), cf.s.att[2:end,1], color = :darkblue)
-# # # p2 = Plots.plot(1:size(Y,2), cf.s.att[2:end,2], color = :darkblue)
-
-# # p1 = Plots.plot(1:size(Y,2), cf.f.a[2:end,1], color = :darkblue)
-# # p2 = Plots.plot(1:size(Y,2), cf.f.a[2:end,2], color = :darkblue)
-
-# # # plot!(p1, a[1,:])
-# # # plot!(p2, a[2,:])
-# # # plot!(nile, color = :black)
-# # # plot!(cf.s.att[2:end,1]-1.64*sqrt.(cf.s.Ptt[2:end,1]), color = :darkblue, linestyle = :dot)
-# # # plot!(cf.s.att[2:end,1]+1.64*sqrt.(cf.s.Ptt[2:end,1]), color = :darkblue, linestyle = :dot)
-
-
-
-
-
-
-
-# # # using Plots
-# # # gr()
-# # # Plots.plot(1:length(nile), cf.s.att[2:end,1], color = :darkblue)
-# # # plot!(nile, color = :black)
-# # # plot!(cf.s.att[2:end,1]-1.64*sqrt.(cf.s.Ptt[2:end,1]), color = :darkblue, linestyle = :dot)
-# # # plot!(cf.s.att[2:end,1]+1.64*sqrt.(cf.s.Ptt[2:end,1]), color = :darkblue, linestyle = :dot)
-
-# # # Plots.plot(1:length(nile), cf.s.Ptt[2:end,1], color = :darkblue)
-# # # Plots.
-
-
-
-
-
-# # @btime begin
-# #     cf = Filthy.CovarianceFilter(Z, H, T, R, Q, zeros(2), eye(2))
-# #     for i in 1:200
-# #         filter!(cf, Y[:, i])
-# #     end
-# # end
-
-# # using Plots
-# # gr()
-
-# # Plots.plot(1:200, a[1,:])
-# # plot!(kf.s.att[1:end,1])
-
-# ## Nile Data
-
-# ## In the Nile data example,
-
-# ## y = α + ϵ
-# ## α' = α + η
-
-# ## In terms of Matrices
-
-# ## Y    = Zt αt + ϵt, ϵt ∼ N(0, Ht)
-# ## αt+1 = Tt αt + Rt ηt, ηt ~ N(0, Qt)
-
-
-
-# # scalar_online = @btime begin
-# #     cf_scalar = LinearStateSpace(1.0, 15099., 1.0, 1.0, 1469.1, 0.0, 10.^7.)
-# #     for j in eachindex(nile)
-# #         Filthy.onlinefilter!(cf_scalar, nile[j])
-# #     end
-# # end
-
-# # stat_online = @btime begin
-# #     cf_static = LinearStateSpace(Zs, Hs, Ts, Rs, Qs, SMatrix{1,1}([0.0]), SMatrix{1,1}(fill(10.^7., (1,1))))
-# #     for j in eachindex(nile)
-# #         Filthy.onlinefilter!(cf_static, nile[j,:])
-# #     end
-# # end
-
-# # matrix_online = @btime begin
-# #     ss_matrix = LinearStateSpace(Zn, Hn, Tn, Rn, Qn, [0.0], fill(10.^7., (1,1)))
-# #     for j in eachindex(nile)
-# #         Filthy.onlinefilter!(ss_matrix, nile[j,:])
-# #     end
-# # end
+# DSL tests
+include("dsl_tests.jl")
