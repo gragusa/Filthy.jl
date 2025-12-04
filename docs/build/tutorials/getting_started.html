@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Getting Started · Filthy.jl</title><meta name="title" content="Getting Started · Filthy.jl"/><meta property="og:title" content="Getting Started · Filthy.jl"/><meta property="twitter:title" content="Getting Started · Filthy.jl"/><meta name="description" content="Documentation for Filthy.jl."/><meta property="og:description" content="Documentation for Filthy.jl."/><meta property="twitter:description" content="Documentation for Filthy.jl."/><meta property="og:url" content="https://gragusa.github.io/Filthy.jl/stable/tutorials/getting_started.html"/><meta property="twitter:url" content="https://gragusa.github.io/Filthy.jl/stable/tutorials/getting_started.html"/><link rel="canonical" href="https://gragusa.github.io/Filthy.jl/stable/tutorials/getting_started.html"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../index.html">Filthy.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../index.html">Home</a></li><li><span class="tocitem">Tutorials</span><ul><li class="is-active"><a class="tocitem" href="getting_started.html">Getting Started</a><ul class="internal"><li><a class="tocitem" href="#The-Local-Level-Model"><span>The Local Level Model</span></a></li><li><a class="tocitem" href="#Creating-a-Model-Specification"><span>Creating a Model Specification</span></a></li><li><a class="tocitem" href="#Simulating-Data"><span>Simulating Data</span></a></li><li><a class="tocitem" href="#Computing-the-Log-Likelihood"><span>Computing the Log-Likelihood</span></a></li><li><a class="tocitem" href="#Kalman-Filter"><span>Kalman Filter</span></a></li><li><a class="tocitem" href="#Kalman-Smoother"><span>Kalman Smoother</span></a></li><li><a class="tocitem" href="#One-Step-Filter-and-Smooth"><span>One-Step Filter and Smooth</span></a></li><li><a class="tocitem" href="#Parameter-Estimation"><span>Parameter Estimation</span></a></li><li><a class="tocitem" href="#Other-Pre-Built-Templates"><span>Other Pre-Built Templates</span></a></li><li><a class="tocitem" href="#Working-with-Missing-Data"><span>Working with Missing Data</span></a></li><li><a class="tocitem" href="#Next-Steps"><span>Next Steps</span></a></li></ul></li><li><a class="tocitem" href="custom_models.html">Custom Models</a></li><li><a class="tocitem" href="dynamic_factor.html">Dynamic Factor Models</a></li></ul></li><li><span class="tocitem">API Reference</span><ul><li><a class="tocitem" href="../api/core.html">Core Functions</a></li><li><a class="tocitem" href="../api/dsl.html">DSL &amp; Templates</a></li><li><a class="tocitem" href="../api/matrix_helpers.html">Matrix Helpers</a></li><li><a class="tocitem" href="../api/optimization.html">Optimization &amp; Bayesian</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href="getting_started.html">Getting Started</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href="getting_started.html">Getting Started</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/gragusa/Filthy.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/gragusa/Filthy.jl/blob/master/docs/src/tutorials/getting_started.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Getting-Started"><a class="docs-heading-anchor" href="#Getting-Started">Getting Started</a><a id="Getting-Started-1"></a><a class="docs-heading-anchor-permalink" href="#Getting-Started" title="Permalink"></a></h1><p>This tutorial introduces the basic workflow for working with state space models in Filthy.jl. We&#39;ll cover:</p><ol><li>Creating a model specification using templates</li><li>Computing the log-likelihood</li><li>Running the Kalman filter</li><li>Running the Kalman smoother</li><li>Estimating parameters via maximum likelihood</li></ol><h2 id="The-Local-Level-Model"><a class="docs-heading-anchor" href="#The-Local-Level-Model">The Local Level Model</a><a id="The-Local-Level-Model-1"></a><a class="docs-heading-anchor-permalink" href="#The-Local-Level-Model" title="Permalink"></a></h2><p>We&#39;ll use the classic <strong>local level model</strong> (also known as the random walk plus noise model) as our running example. This model decomposes a time series into a slowly-evolving level plus observation noise:</p><p class="math-container">\[\begin{aligned}
+y_t &amp;= \mu_t + \varepsilon_t, \quad \varepsilon_t \sim N(0, \sigma^2_\varepsilon) \\
+\mu_{t+1} &amp;= \mu_t + \eta_t, \quad \eta_t \sim N(0, \sigma^2_\eta)
+\end{aligned}\]</p><p>In state space form:</p><ul><li><span>$Z = [1]$</span> (the observation loads directly on the state)</li><li><span>$H = [\sigma^2_\varepsilon]$</span> (observation variance)</li><li><span>$T = [1]$</span> (random walk dynamics)</li><li><span>$R = [1]$</span> (state receives the shock directly)</li><li><span>$Q = [\sigma^2_\eta]$</span> (state innovation variance)</li></ul><h2 id="Creating-a-Model-Specification"><a class="docs-heading-anchor" href="#Creating-a-Model-Specification">Creating a Model Specification</a><a id="Creating-a-Model-Specification-1"></a><a class="docs-heading-anchor-permalink" href="#Creating-a-Model-Specification" title="Permalink"></a></h2><pre><code class="language-julia hljs">using Filthy
+
+# Create a local level model with initial parameter values
+spec = local_level(σ_obs_init=15.0, σ_level_init=10.0)
+
+# Inspect the specification
+println(&quot;Model name: &quot;, spec.name)
+println(&quot;Number of states: &quot;, spec.n_states)
+println(&quot;Number of observations: &quot;, spec.n_obs)
+println(&quot;Parameters: &quot;, param_names(spec))
+println(&quot;Initial values: &quot;, initial_values(spec))</code></pre><p>Output:</p><pre><code class="nohighlight hljs">Model name: LocalLevel
+Number of states: 1
+Number of observations: 1
+Parameters: [:σ_obs, :σ_level]
+Initial values: [15.0, 10.0]</code></pre><h2 id="Simulating-Data"><a class="docs-heading-anchor" href="#Simulating-Data">Simulating Data</a><a id="Simulating-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Simulating-Data" title="Permalink"></a></h2><p>Let&#39;s create some synthetic data to work with:</p><pre><code class="language-julia hljs">using Random
+Random.seed!(42)
+
+# True parameters
+σ_obs_true = 15.0
+σ_level_true = 10.0
+
+# Simulate data
+T = 100
+μ = zeros(T)
+y = zeros(1, T)  # Note: observations are p × T matrices
+
+μ[1] = 0.0
+for t in 2:T
+    μ[t] = μ[t-1] + σ_level_true * randn()
+end
+for t in 1:T
+    y[1, t] = μ[t] + σ_obs_true * randn()
+end</code></pre><h2 id="Computing-the-Log-Likelihood"><a class="docs-heading-anchor" href="#Computing-the-Log-Likelihood">Computing the Log-Likelihood</a><a id="Computing-the-Log-Likelihood-1"></a><a class="docs-heading-anchor-permalink" href="#Computing-the-Log-Likelihood" title="Permalink"></a></h2><p>Given a model specification and parameters, we can compute the log-likelihood:</p><pre><code class="language-julia hljs"># Build the state space components
+θ = initial_values(spec)  # Use initial parameter values
+ss = build_linear_state_space(spec, θ, y)
+
+# Compute log-likelihood
+ll = kalman_loglik(ss.p, y, ss.a1, ss.P1)
+println(&quot;Log-likelihood: &quot;, ll)</code></pre><p>The <code>build_linear_state_space</code> function returns a named tuple with:</p><ul><li><code>p</code>: A <code>KFParms</code> struct containing the system matrices (Z, H, T, R, Q)</li><li><code>a1</code>: Initial state mean vector</li><li><code>P1</code>: Initial state covariance matrix</li></ul><h3 id="Using-NamedTuple-Parameters"><a class="docs-heading-anchor" href="#Using-NamedTuple-Parameters">Using NamedTuple Parameters</a><a id="Using-NamedTuple-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Using-NamedTuple-Parameters" title="Permalink"></a></h3><p>You can also pass parameters as a NamedTuple for clarity:</p><pre><code class="language-julia hljs">using TransformVariables
+
+# Build transformation to get constrained parameters
+t = build_transformation(spec)
+
+# Transform unconstrained values to NamedTuple
+θ_nt = TransformVariables.transform(t, [2.7, 2.3])  # log-scale values
+println(θ_nt)  # (σ_obs = 14.88..., σ_level = 9.97...)
+
+# Compute log-likelihood with NamedTuple
+ll = ssm_loglik(spec, θ_nt, y)</code></pre><h2 id="Kalman-Filter"><a class="docs-heading-anchor" href="#Kalman-Filter">Kalman Filter</a><a id="Kalman-Filter-1"></a><a class="docs-heading-anchor-permalink" href="#Kalman-Filter" title="Permalink"></a></h2><p>The Kalman filter computes the sequence of filtered state estimates <span>$a_{t|t}$</span> and their covariances <span>$P_{t|t}$</span>:</p><pre><code class="language-julia hljs"># Run the full Kalman filter
+filter_result = kalman_filter_full(ss.p, y, ss.a1, ss.P1)
+
+# Access results
+a = filter_result.a      # Filtered state means (m × T+1)
+P = filter_result.P      # Filtered state covariances (m × m × T+1)
+v = filter_result.v      # Prediction errors (p × T)
+F = filter_result.F      # Prediction error variances (p × p × T)
+K = filter_result.K      # Kalman gains (m × p × T)
+ll = filter_result.loglik # Log-likelihood
+
+println(&quot;Final filtered state: &quot;, a[:, end])
+println(&quot;Log-likelihood: &quot;, ll)</code></pre><h3 id="Filter-Output-Structure"><a class="docs-heading-anchor" href="#Filter-Output-Structure">Filter Output Structure</a><a id="Filter-Output-Structure-1"></a><a class="docs-heading-anchor-permalink" href="#Filter-Output-Structure" title="Permalink"></a></h3><ul><li><code>a[:, t]</code>: State estimate at time <code>t</code> given observations up to <code>t-1</code> (i.e., <span>$a_{t|t-1}$</span>)</li><li><code>a[:, T+1]</code>: State estimate at time <code>T</code> given all observations (i.e., <span>$a_{T|T}$</span>)</li><li><code>P[:, :, t]</code>: Corresponding covariance matrices</li><li><code>v[:, t]</code>: Innovation (prediction error) at time <code>t</code></li><li><code>F[:, :, t]</code>: Innovation covariance at time <code>t</code></li><li><code>K[:, :, t]</code>: Kalman gain at time <code>t</code></li></ul><h2 id="Kalman-Smoother"><a class="docs-heading-anchor" href="#Kalman-Smoother">Kalman Smoother</a><a id="Kalman-Smoother-1"></a><a class="docs-heading-anchor-permalink" href="#Kalman-Smoother" title="Permalink"></a></h2><p>The Kalman smoother computes smoothed state estimates using all available observations:</p><pre><code class="language-julia hljs"># Run the Kalman smoother
+smooth_result = kalman_smoother(ss.p, y, ss.a1, ss.P1)
+
+# Access results
+α = smooth_result.α      # Smoothed state means (m × T)
+V = smooth_result.V      # Smoothed state covariances (m × m × T)
+r = smooth_result.r      # Smoothing cumulant (m × T)
+N = smooth_result.N      # Smoothing variance cumulant (m × m × T)
+
+println(&quot;Smoothed state at t=50: &quot;, α[:, 50])</code></pre><h3 id="Comparing-Filtered-and-Smoothed-Estimates"><a class="docs-heading-anchor" href="#Comparing-Filtered-and-Smoothed-Estimates">Comparing Filtered and Smoothed Estimates</a><a id="Comparing-Filtered-and-Smoothed-Estimates-1"></a><a class="docs-heading-anchor-permalink" href="#Comparing-Filtered-and-Smoothed-Estimates" title="Permalink"></a></h3><pre><code class="language-julia hljs">using Plots  # Optional, for visualization
+
+# Compare filtered vs smoothed estimates
+plot(1:T, μ, label=&quot;True level&quot;, linewidth=2)
+plot!(1:T, a[1, 1:T], label=&quot;Filtered&quot;, linestyle=:dash)
+plot!(1:T, α[1, :], label=&quot;Smoothed&quot;, linestyle=:dot)
+xlabel!(&quot;Time&quot;)
+ylabel!(&quot;Level&quot;)</code></pre><p>The smoothed estimates are generally more accurate than filtered estimates because they use information from the entire sample.</p><h2 id="One-Step-Filter-and-Smooth"><a class="docs-heading-anchor" href="#One-Step-Filter-and-Smooth">One-Step Filter and Smooth</a><a id="One-Step-Filter-and-Smooth-1"></a><a class="docs-heading-anchor-permalink" href="#One-Step-Filter-and-Smooth" title="Permalink"></a></h2><p>For convenience, you can run both operations together:</p><pre><code class="language-julia hljs">result = kalman_filter_and_smooth(ss.p, y, ss.a1, ss.P1)
+
+# Access both filter and smoother outputs
+a = result.a          # Filtered states
+α = result.α          # Smoothed states
+loglik = result.loglik</code></pre><h2 id="Parameter-Estimation"><a class="docs-heading-anchor" href="#Parameter-Estimation">Parameter Estimation</a><a id="Parameter-Estimation-1"></a><a class="docs-heading-anchor-permalink" href="#Parameter-Estimation" title="Permalink"></a></h2><p>Filthy.jl integrates with Optimization.jl for maximum likelihood estimation:</p><pre><code class="language-julia hljs"># Estimate parameters via MLE
+result = optimize_ssm(spec, y)
+
+# Access results
+θ_mle = result.θ           # Estimated parameters (NamedTuple)
+loglik = result.loglik     # Maximized log-likelihood
+minimizer = result.minimizer  # Raw optimizer output
+
+println(&quot;Estimated σ_obs: &quot;, θ_mle.σ_obs)
+println(&quot;Estimated σ_level: &quot;, θ_mle.σ_level)
+println(&quot;Log-likelihood: &quot;, loglik)</code></pre><h3 id="With-Standard-Errors"><a class="docs-heading-anchor" href="#With-Standard-Errors">With Standard Errors</a><a id="With-Standard-Errors-1"></a><a class="docs-heading-anchor-permalink" href="#With-Standard-Errors" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Estimate with standard errors (uses Hessian)
+result = optimize_ssm_with_stderr(spec, y)
+
+println(&quot;σ_obs: &quot;, θ_mle.σ_obs, &quot; ± &quot;, result.stderr.σ_obs)
+println(&quot;σ_level: &quot;, θ_mle.σ_level, &quot; ± &quot;, result.stderr.σ_level)</code></pre><h3 id="Using-Custom-Initial-Values"><a class="docs-heading-anchor" href="#Using-Custom-Initial-Values">Using Custom Initial Values</a><a id="Using-Custom-Initial-Values-1"></a><a class="docs-heading-anchor-permalink" href="#Using-Custom-Initial-Values" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Provide custom starting values
+θ0 = (σ_obs = 20.0, σ_level = 5.0)
+result = optimize_ssm(spec, y; θ0=θ0)</code></pre><h2 id="Other-Pre-Built-Templates"><a class="docs-heading-anchor" href="#Other-Pre-Built-Templates">Other Pre-Built Templates</a><a id="Other-Pre-Built-Templates-1"></a><a class="docs-heading-anchor-permalink" href="#Other-Pre-Built-Templates" title="Permalink"></a></h2><p>Filthy.jl provides several other templates:</p><h3 id="Local-Linear-Trend"><a class="docs-heading-anchor" href="#Local-Linear-Trend">Local Linear Trend</a><a id="Local-Linear-Trend-1"></a><a class="docs-heading-anchor-permalink" href="#Local-Linear-Trend" title="Permalink"></a></h3><pre><code class="language-julia hljs"># Level + slope model
+spec = local_linear_trend(
+    σ_obs_init = 1.0,
+    σ_level_init = 0.1,
+    σ_slope_init = 0.01
+)
+# Parameters: [:σ_obs, :σ_level, :σ_slope]</code></pre><h3 id="AR(1)-Process"><a class="docs-heading-anchor" href="#AR(1)-Process">AR(1) Process</a><a id="AR(1)-Process-1"></a><a class="docs-heading-anchor-permalink" href="#AR(1)-Process" title="Permalink"></a></h3><pre><code class="language-julia hljs"># AR(1) with measurement noise
+spec = ar1(
+    ρ_init = 0.9,         # AR coefficient
+    σ_state_init = 1.0,   # State innovation std dev
+    σ_obs_init = 0.5      # Observation noise std dev
+)
+# Parameters: [:ρ, :σ_state, :σ_obs]</code></pre><h3 id="ARMA(p,-q)"><a class="docs-heading-anchor" href="#ARMA(p,-q)">ARMA(p, q)</a><a id="ARMA(p,-q)-1"></a><a class="docs-heading-anchor-permalink" href="#ARMA(p,-q)" title="Permalink"></a></h3><pre><code class="language-julia hljs"># ARMA(2, 1) model
+spec = arma(2, 1;
+    ar_init = [0.5, 0.3],
+    ma_init = [0.2],
+    σ_init = 1.0
+)
+# Parameters: [:ar_1, :ar_2, :ma_1, :σ]</code></pre><h2 id="Working-with-Missing-Data"><a class="docs-heading-anchor" href="#Working-with-Missing-Data">Working with Missing Data</a><a id="Working-with-Missing-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Working-with-Missing-Data" title="Permalink"></a></h2><p>Filthy.jl handles missing observations automatically:</p><pre><code class="language-julia hljs"># Create data with missing values
+y_missing = copy(y)
+y_missing[1, 20:25] .= NaN  # Mark as missing
+
+# Filter and smooth work normally
+result = kalman_filter_and_smooth(ss.p, y_missing, ss.a1, ss.P1)
+
+# The smoother will interpolate through missing periods</code></pre><h2 id="Next-Steps"><a class="docs-heading-anchor" href="#Next-Steps">Next Steps</a><a id="Next-Steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-Steps" title="Permalink"></a></h2><ul><li>Learn how to specify <strong><a href="custom_models.html">Custom Models</a></strong> using the DSL</li><li>Explore <strong><a href="dynamic_factor.html">Dynamic Factor Models</a></strong> for multivariate analysis</li><li>See the <strong><a href="../api/core.html">Core Functions</a></strong> and <strong><a href="../api/dsl.html">DSL &amp; Templates</a></strong> for complete API documentation</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../index.html">« Home</a><a class="docs-footer-nextpage" href="custom_models.html">Custom Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 4 December 2025 00:07">Thursday 4 December 2025</span>. Using Julia version 1.12.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
