@@ -90,6 +90,43 @@ function kalman_smoother(Z::AbstractMatrix, T::AbstractMatrix,
 end
 
 """
+    kalman_smoother(p::KFParms, y, a1, P1) -> NamedTuple
+
+High-level Kalman smoother that runs filter and smoother in one call.
+
+# Arguments
+- `p::KFParms`: State-space model parameters (Z, H, T, R, Q)
+- `y`: Observations (p × n matrix)
+- `a1`: Initial state mean (m-vector)
+- `P1`: Initial state covariance (m × m matrix)
+
+# Returns
+Named tuple with:
+- `α`: Smoothed states (m × n), where α[:, t] = E[αₜ | y₁:ₙ]
+- `V`: Smoothed state covariances (m × m × n)
+- `r`: Smoothing cumulant (m × n)
+- `N`: Smoothing variance cumulant (m × m × n)
+
+# Example
+```julia
+p = KFParms(Z, H, T, R, Q)
+result = kalman_smoother(p, y, a1, P1)
+smoothed_states = result.α
+```
+"""
+function kalman_smoother(p::KFParms, y::AbstractMatrix,
+                         a1::AbstractVector, P1::AbstractMatrix)
+    # Run filter first
+    filt = kalman_filter_full(p, y, a1, P1)
+
+    # Run smoother
+    α, V = kalman_smoother(p.Z, p.T, filt.a, filt.P, filt.v, filt.F)
+
+    # Return full results
+    return (α=α, V=V, r=nothing, N=nothing)
+end
+
+"""
     kalman_filter_and_smooth(p::KFParms, y, a1, P1)
 
 Combined filter and smoother for state-space models.

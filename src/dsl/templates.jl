@@ -35,7 +35,7 @@ spec = local_level(σ_obs=(init=15.0, lower=1.0, upper=200.0), σ_level=:free)
 ```
 """
 
-export local_level, local_linear_trend, ar1, arma
+export local_level, local_linear_trend, ar1, arma, dynamic_factor
 
 """
     ParamSpec
@@ -337,4 +337,290 @@ function arma(p::Int, q::Int; ar_init=nothing, ma_init=nothing, σ_init=1.0)
     end
 
     SSMSpec(Symbol("ARMA($p,$q)"), r, 1, 1, params, Z, H, T, R, Q, a1, P1)
+end
+
+"""
+    dynamic_factor(n_obs, n_factors; factor_lags=1, obs_lags=0, correlated_errors=false,
+                   loadings_init=0.5, ar_init=0.5, σ_obs_init=1.0,
+                   σ_factor_init=1.0, diffuse=true)
+
+Create specification for a dynamic factor model with VAR factor dynamics and
+optional lagged factor loadings.
+
+Model:
+    yₜ = Λ₀ fₜ + Λ₁ fₜ₋₁ + ... + Λₛ fₜ₋ₛ + εₜ,  εₜ ~ N(0, H)
+    fₜ = Φ₁ fₜ₋₁ + Φ₂ fₜ₋₂ + ... + Φₚ fₜ₋ₚ + ηₜ,  ηₜ ~ N(0, Q)
+
+where:
+- yₜ is n_obs × 1 vector of observations
+- fₜ is n_factors × 1 vector of latent factors
+- Λₗ is n_obs × n_factors factor loadings matrix for lag l (l = 0, ..., s)
+- Φₗ is n_factors × n_factors AR coefficient matrix for lag l (diagonal)
+- H is observation error covariance (diagonal or full if correlated_errors=true)
+- Q is factor innovation covariance (diagonal)
+- s = obs_lags, p = factor_lags
+
+The model is cast in companion form with state vector:
+    αₜ = [fₜ', fₜ₋₁', ..., fₜ₋ₘ₊₁']'  where m = max(p, s+1)
+
+# Identification
+
+For identification, the first n_factors rows of Λ₀ (contemporaneous loadings)
+are set to an identity matrix:
+- λ₀_{i,i} = 1 for i ≤ n_factors
+- λ₀_{i,j} = 0 for i < j ≤ n_factors
+
+All other loadings (including lagged) are free parameters.
+
+# Arguments
+- `n_obs::Int`: Number of observable variables
+- `n_factors::Int`: Number of latent factors (must be < n_obs)
+- `factor_lags::Int=1`: Number of lags in factor VAR dynamics (p)
+- `obs_lags::Int=0`: Number of lagged factors that load onto observations (s).
+                     If s > 0, observations depend on fₜ, fₜ₋₁, ..., fₜ₋ₛ.
+- `correlated_errors::Bool=false`: If true, H is a full covariance matrix (inexact DFM).
+                                   If false, H is diagonal (exact DFM).
+- `loadings_init::Real=0.5`: Initial value for free factor loadings
+- `ar_init::Real=0.5`: Initial value for AR coefficients (divided by lag number)
+- `σ_obs_init::Real=1.0`: Initial value for observation error std devs
+- `σ_factor_init::Real=1.0`: Initial value for factor innovation std devs
+- `diffuse::Bool=true`: Use diffuse initialization for factors
+
+# State Space Representation
+
+State dimension is `n_factors * max(factor_lags, obs_lags + 1)`.
+
+State vector: αₜ = [fₜ', fₜ₋₁', ..., fₜ₋ₘ₊₁']'
+
+Transition matrix (companion form):
+    T = [Φ₁  Φ₂  ... Φₚ  0  ... 0]   (padded with zeros if m > p)
+        [I   0   ... 0   0  ... 0]
+        [0   I   ... 0   0  ... 0]
+        [⋮   ⋮   ⋱   ⋮   ⋮  ⋱   ⋮]
+        [0   0   ... I   0  ... 0]
+
+Observation matrix: Z = [Λ₀  Λ₁  ...  Λₛ  0  ...  0]
+
+# Example
+```julia
+# Standard 1-factor model (no lagged loadings)
+spec = dynamic_factor(4, 1)
+
+# 1-factor model with 2 factor lags, no lagged loadings
+spec = dynamic_factor(4, 1; factor_lags=2)
+# yₜ = Λ₀ fₜ + εₜ
+# fₜ = φ₁ fₜ₋₁ + φ₂ fₜ₋₂ + ηₜ
+
+# 1-factor model with lagged loadings (s=1)
+spec = dynamic_factor(4, 1; factor_lags=2, obs_lags=1)
+# yₜ = Λ₀ fₜ + Λ₁ fₜ₋₁ + εₜ
+# fₜ = φ₁ fₜ₋₁ + φ₂ fₜ₋₂ + ηₜ
+# Parameters: λ0_i_j (contemporaneous), λ1_i_j (lag 1 loadings)
+
+# 2-factor model with obs_lags=2, factor_lags=1
+spec = dynamic_factor(5, 2; factor_lags=1, obs_lags=2)
+# yₜ = Λ₀ fₜ + Λ₁ fₜ₋₁ + Λ₂ fₜ₋₂ + εₜ
+# State: [f₁ₜ, f₂ₜ, f₁ₜ₋₁, f₂ₜ₋₁, f₁ₜ₋₂, f₂ₜ₋₂]
+```
+
+# Parameters Created
+- `λ0_i_j`: Contemporaneous loadings (i > j for identification in first k rows)
+- `λl_i_j`: Loadings for lag l (l = 1, ..., obs_lags), all free
+- `φ_i_l`: AR coefficient for factor i at lag l (l = 1, ..., factor_lags)
+- `σ_obs_i`: Observation error std devs (if correlated_errors=false)
+- `H_σ_i`, `H_corr_i`: Covariance parameters (if correlated_errors=true)
+- `σ_factor_i`: Factor innovation std devs
+"""
+function dynamic_factor(n_obs::Int, n_factors::Int;
+                        factor_lags::Int=1,
+                        obs_lags::Int=0,
+                        correlated_errors::Bool=false,
+                        loadings_init::Real=0.5,
+                        ar_init::Real=0.5,
+                        σ_obs_init::Real=1.0,
+                        σ_factor_init::Real=1.0,
+                        diffuse::Bool=true)
+    # Validation
+    n_factors < n_obs || throw(ArgumentError("n_factors must be < n_obs for identification"))
+    n_factors >= 1 || throw(ArgumentError("n_factors must be >= 1"))
+    factor_lags >= 1 || throw(ArgumentError("factor_lags must be >= 1"))
+    obs_lags >= 0 || throw(ArgumentError("obs_lags must be >= 0"))
+
+    # State dimension = n_factors * max(factor_lags, obs_lags + 1)
+    # We need enough lags in the state to support both factor dynamics and observation loadings
+    n_state_lags = max(factor_lags, obs_lags + 1)
+    n_states = n_factors * n_state_lags
+    # Number of shocks = n_factors (only current factors have innovations)
+    n_shocks = n_factors
+
+    # Build using custom_ssm approach for flexibility
+    params = SSMParameter{Float64}[]
+    param_set = Set{Symbol}()
+    matrix_exprs = Dict{Symbol,Any}()
+
+    # ==========================================
+    # Z matrix (loadings): n_obs × n_states
+    # ==========================================
+    # Z = [Λ₀  Λ₁  ...  Λₛ  0  ...  0]
+    # where each Λₗ is n_obs × n_factors
+    #
+    # For identification: upper-left block of Λ₀ is identity
+    Z = SSMMatrixSpec((n_obs, n_states))
+
+    # Contemporaneous loadings (Λ₀) - columns 1:n_factors
+    for i in 1:n_obs
+        for j in 1:n_factors
+            if i == j && i <= n_factors
+                # Diagonal of identity block: fixed at 1
+                Z.elements[(i, j)] = FixedValue(1.0)
+            elseif i < j && i <= n_factors
+                # Upper triangle of identity block: fixed at 0
+                Z.elements[(i, j)] = FixedValue(0.0)
+            else
+                # Free loading parameter (contemporaneous)
+                pname = Symbol("λ0_$(i)_$(j)")
+                push!(params, SSMParameter(pname; lower=-Inf, upper=Inf, init=loadings_init))
+                push!(param_set, pname)
+                Z.elements[(i, j)] = ParameterRef(pname)
+            end
+        end
+    end
+
+    # Lagged loadings (Λ₁, Λ₂, ..., Λₛ) - all free parameters
+    for lag in 1:obs_lags
+        col_offset = lag * n_factors
+        for i in 1:n_obs
+            for j in 1:n_factors
+                col = col_offset + j
+                # All lagged loadings are free (no identification restrictions)
+                pname = Symbol("λ$(lag)_$(i)_$(j)")
+                # Use smaller initial values for lagged loadings
+                init_val = loadings_init / (lag + 1)
+                push!(params, SSMParameter(pname; lower=-Inf, upper=Inf, init=init_val))
+                push!(param_set, pname)
+                Z.elements[(i, col)] = ParameterRef(pname)
+            end
+        end
+    end
+    # Remaining columns (beyond obs_lags) are zero - use default
+
+    # ==========================================
+    # H matrix (observation errors): n_obs × n_obs
+    # ==========================================
+    if correlated_errors
+        # Full covariance matrix using CovMatrixExpr
+        prefix = :H
+        n = n_obs
+
+        # Create σ parameters (positive)
+        σ_param_names = Symbol[]
+        for i in 1:n
+            pname = Symbol("$(prefix)_σ_$i")
+            if !(pname in param_set)
+                push!(params, SSMParameter(pname; lower=0.0, upper=Inf, init=σ_obs_init))
+                push!(param_set, pname)
+            end
+            push!(σ_param_names, pname)
+        end
+
+        # Create correlation parameters (unconstrained)
+        n_corr = n * (n - 1) ÷ 2
+        corr_param_names = Symbol[]
+        for i in 1:n_corr
+            pname = Symbol("$(prefix)_corr_$i")
+            if !(pname in param_set)
+                push!(params, SSMParameter(pname; lower=-Inf, upper=Inf, init=0.0))
+                push!(param_set, pname)
+            end
+            push!(corr_param_names, pname)
+        end
+
+        # Store CovMatrixExpr
+        matrix_exprs[:H] = CovMatrixExpr(n, σ_param_names, corr_param_names)
+        H = SSMMatrixSpec((n_obs, n_obs))  # Placeholder
+    else
+        # Diagonal covariance
+        H = SSMMatrixSpec((n_obs, n_obs))
+        for i in 1:n_obs
+            pname = Symbol("σ_obs_$i")
+            push!(params, SSMParameter(pname; lower=1e-6, upper=Inf, init=σ_obs_init))
+            push!(param_set, pname)
+            H.elements[(i, i)] = ParameterRef(pname, x -> x^2)
+        end
+    end
+
+    # ==========================================
+    # T matrix (factor dynamics): n_states × n_states
+    # ==========================================
+    # Companion form:
+    # T = [Φ₁  Φ₂  ... Φₚ  0  ... 0]   <- n_factors rows (AR coefficients, padded)
+    #     [I   0   ... 0   0  ... 0]
+    #     [0   I   ... 0   0  ... 0]
+    #     [⋮   ⋮   ⋱   ⋮   ⋮  ⋱   ⋮]
+    #     [0   0   ... I   0  ... 0]
+    #
+    # Each Φₗ is n_factors × n_factors diagonal matrix
+    T = SSMMatrixSpec((n_states, n_states))
+
+    # First n_factors rows: AR coefficient blocks (only up to factor_lags)
+    for i in 1:n_factors
+        for lag in 1:factor_lags
+            # Column block for lag l starts at (lag-1)*n_factors + 1
+            col = (lag - 1) * n_factors + i
+            pname = Symbol("φ_$(i)_$(lag)")
+            # Initialize with decreasing values for higher lags
+            init_val = ar_init / lag
+            push!(params, SSMParameter(pname; lower=-0.9999, upper=0.9999, init=init_val))
+            push!(param_set, pname)
+            T.elements[(i, col)] = ParameterRef(pname)
+        end
+        # Columns beyond factor_lags are zero (default)
+    end
+
+    # Identity blocks for shifting lags (rows n_factors+1 to n_states)
+    if n_state_lags > 1
+        for lag in 1:(n_state_lags - 1)
+            for i in 1:n_factors
+                row = lag * n_factors + i
+                col = (lag - 1) * n_factors + i
+                T.elements[(row, col)] = FixedValue(1.0)
+            end
+        end
+    end
+
+    # ==========================================
+    # R matrix (selection): n_states × n_shocks
+    # ==========================================
+    # Only the first n_factors states (current factors) receive shocks
+    # R = [I]   <- n_factors × n_factors identity
+    #     [0]   <- (n_states - n_factors) × n_factors zeros
+    R = SSMMatrixSpec((n_states, n_shocks))
+    for i in 1:n_factors
+        R.elements[(i, i)] = FixedValue(1.0)
+    end
+
+    # ==========================================
+    # Q matrix (factor innovations): n_shocks × n_shocks
+    # ==========================================
+    # Diagonal covariance for factor innovations
+    Q = SSMMatrixSpec((n_shocks, n_shocks))
+    for i in 1:n_factors
+        pname = Symbol("σ_factor_$i")
+        push!(params, SSMParameter(pname; lower=1e-6, upper=Inf, init=σ_factor_init))
+        push!(param_set, pname)
+        Q.elements[(i, i)] = ParameterRef(pname, x -> x^2)
+    end
+
+    # ==========================================
+    # Initial state
+    # ==========================================
+    a1 = [FixedValue(0.0) for _ in 1:n_states]
+    P1_val = diffuse ? 1e7 : 1e4
+    P1 = SSMMatrixSpec((n_states, n_states))
+    for i in 1:n_states
+        P1.elements[(i, i)] = FixedValue(P1_val)
+    end
+
+    SSMSpec(:DynamicFactor, n_states, n_obs, n_shocks, params,
+            Z, H, T, R, Q, a1, P1, matrix_exprs)
 end

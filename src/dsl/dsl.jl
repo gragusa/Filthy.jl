@@ -65,7 +65,7 @@ export SSMParameter, SSMSpec, FixedValue, ParameterRef
 export param_names, n_params, initial_values, param_bounds, param_index
 export build_kfparms, build_initial_state, build_linear_state_space
 export objective_function, ssm_loglik
-export local_level, local_linear_trend, ar1, arma
+export local_level, local_linear_trend, ar1, arma, dynamic_factor
 export custom_ssm, FreeParam, @P
 
 # Matrix helpers
