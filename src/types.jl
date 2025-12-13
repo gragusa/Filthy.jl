@@ -96,3 +96,251 @@ function KFParms_static(Z, H, T, R, Q)
         to_static_if_small(Q)
     )
 end
+
+# ============================================
+# KalmanFilterResult - Filter output struct
+# ============================================
+
+"""
+    KalmanFilterResult{T<:Real, P<:KFParms}
+
+Result of Kalman filter computation, storing model parameters and both predicted and filtered quantities.
+
+Following FKF (R package) naming conventions:
+- `at`: Predicted states E[αₜ | y₁:ₜ₋₁] (m × n)
+- `Pt`: Predicted covariances Var[αₜ | y₁:ₜ₋₁] (m × m × n)
+- `att`: Filtered states E[αₜ | y₁:ₜ] (m × n)
+- `Ptt`: Filtered covariances Var[αₜ | y₁:ₜ] (m × m × n)
+- `vt`: Prediction errors yₜ - E[yₜ | y₁:ₜ₋₁] (p × n)
+- `Ft`: Innovation covariances Var[yₜ | y₁:ₜ₋₁] (p × p × n)
+- `Kt`: Kalman gains (m × p × n)
+
+# Fields
+- `p`: Model parameters (KFParms with Z, H, T, R, Q)
+- `loglik`: Log-likelihood of non-missing observations
+- `at`: Predicted state means (m × n)
+- `Pt`: Predicted state covariances (m × m × n)
+- `att`: Filtered state means (m × n)
+- `Ptt`: Filtered state covariances (m × m × n)
+- `vt`: Innovations/prediction errors (p × n), NaN for missing
+- `Ft`: Innovation covariances (p × p × n)
+- `Kt`: Kalman gains (m × p × n), zero for missing
+- `missing_mask`: BitVector indicating missing observations
+
+# Accessor Methods
+Use accessor methods for clear, consistent API:
+- `parameters(r)` → `p` (KFParms)
+- `obs_matrix(r)` → `p.Z`
+- `obs_cov(r)` → `p.H`
+- `transition_matrix(r)` → `p.T`
+- `selection_matrix(r)` → `p.R`
+- `state_cov(r)` → `p.Q`
+- `predicted_states(r)` → `at`
+- `variances_predicted_states(r)` → `Pt`
+- `filtered_states(r)` → `att`
+- `variances_filtered_states(r)` → `Ptt`
+- `prediction_errors(r)` → `vt`
+- `variances_prediction_errors(r)` → `Ft`
+- `kalman_gains(r)` → `Kt`
+- `loglikelihood(r)` → `loglik`
+"""
+struct KalmanFilterResult{T<:Real, P<:KFParms}
+    # Model parameters
+    p::P
+    # Log-likelihood
+    loglik::T
+    # Predicted quantities: a_{t|t-1}, P_{t|t-1}
+    at::Matrix{T}          # m × n
+    Pt::Array{T,3}         # m × m × n
+    # Filtered quantities: a_{t|t}, P_{t|t}
+    att::Matrix{T}         # m × n
+    Ptt::Array{T,3}        # m × m × n
+    # Innovations
+    vt::Matrix{T}          # p × n
+    Ft::Array{T,3}         # p × p × n
+    Kt::Array{T,3}         # m × p × n
+    # Missing data
+    missing_mask::BitVector
+end
+
+# Accessor methods for KalmanFilterResult
+"""
+    parameters(r::KalmanFilterResult) -> KFParms
+
+Return the model parameters (Z, H, T, R, Q).
+"""
+parameters(r::KalmanFilterResult) = r.p
+
+"""
+    obs_matrix(r::KalmanFilterResult)
+
+Return observation matrix Z (p × m).
+"""
+obs_matrix(r::KalmanFilterResult) = r.p.Z
+
+"""
+    obs_cov(r::KalmanFilterResult)
+
+Return observation noise covariance H (p × p).
+"""
+obs_cov(r::KalmanFilterResult) = r.p.H
+
+"""
+    transition_matrix(r::KalmanFilterResult)
+
+Return state transition matrix T (m × m).
+"""
+transition_matrix(r::KalmanFilterResult) = r.p.T
+
+"""
+    selection_matrix(r::KalmanFilterResult)
+
+Return state noise selection matrix R (m × r).
+"""
+selection_matrix(r::KalmanFilterResult) = r.p.R
+
+"""
+    state_cov(r::KalmanFilterResult)
+
+Return state noise covariance Q (r × r).
+"""
+state_cov(r::KalmanFilterResult) = r.p.Q
+
+"""
+    predicted_states(r::KalmanFilterResult) -> Matrix
+
+Return predicted state means E[αₜ | y₁:ₜ₋₁] for t = 1:n. (FKF: at)
+"""
+predicted_states(r::KalmanFilterResult) = r.at
+
+"""
+    variances_predicted_states(r::KalmanFilterResult) -> Array{T,3}
+
+Return predicted state covariances Var[αₜ | y₁:ₜ₋₁] for t = 1:n. (FKF: Pt)
+"""
+variances_predicted_states(r::KalmanFilterResult) = r.Pt
+
+"""
+    filtered_states(r::KalmanFilterResult) -> Matrix
+
+Return filtered state means E[αₜ | y₁:ₜ] for t = 1:n. (FKF: att)
+"""
+filtered_states(r::KalmanFilterResult) = r.att
+
+"""
+    variances_filtered_states(r::KalmanFilterResult) -> Array{T,3}
+
+Return filtered state covariances Var[αₜ | y₁:ₜ] for t = 1:n. (FKF: Ptt)
+"""
+variances_filtered_states(r::KalmanFilterResult) = r.Ptt
+
+"""
+    prediction_errors(r::KalmanFilterResult) -> Matrix
+
+Return prediction errors (innovations) vₜ = yₜ - E[yₜ | y₁:ₜ₋₁] for t = 1:n. (FKF: vt)
+NaN for missing observations.
+"""
+prediction_errors(r::KalmanFilterResult) = r.vt
+
+"""
+    variances_prediction_errors(r::KalmanFilterResult) -> Array{T,3}
+
+Return innovation covariances Var[yₜ | y₁:ₜ₋₁] for t = 1:n. (FKF: Ft)
+"""
+variances_prediction_errors(r::KalmanFilterResult) = r.Ft
+
+"""
+    kalman_gains(r::KalmanFilterResult) -> Array{T,3}
+
+Return Kalman gains Kₜ for t = 1:n. Zero for missing observations.
+"""
+kalman_gains(r::KalmanFilterResult) = r.Kt
+
+"""
+    loglikelihood(r::KalmanFilterResult) -> Real
+
+Return log-likelihood of non-missing observations.
+"""
+loglikelihood(r::KalmanFilterResult) = r.loglik
+
+# ============================================
+# KalmanFilterResultScalar - Scalar version
+# ============================================
+
+"""
+    KalmanFilterResultScalar{T<:Real}
+
+Scalar (univariate state) version of KalmanFilterResult.
+
+Same naming conventions as KalmanFilterResult but with vectors instead of matrices
+for state quantities.
+"""
+struct KalmanFilterResultScalar{T<:Real}
+    loglik::T
+    at::Vector{T}          # n: predicted states
+    Pt::Vector{T}          # n: predicted variances
+    att::Vector{T}         # n: filtered states
+    Ptt::Vector{T}         # n: filtered variances
+    vt::Vector{T}          # n: innovations
+    Ft::Vector{T}          # n: innovation variances
+    missing_mask::BitVector
+end
+
+# Accessor methods for scalar version
+predicted_states(r::KalmanFilterResultScalar) = r.at
+variances_predicted_states(r::KalmanFilterResultScalar) = r.Pt
+filtered_states(r::KalmanFilterResultScalar) = r.att
+variances_filtered_states(r::KalmanFilterResultScalar) = r.Ptt
+prediction_errors(r::KalmanFilterResultScalar) = r.vt
+variances_prediction_errors(r::KalmanFilterResultScalar) = r.Ft
+loglikelihood(r::KalmanFilterResultScalar) = r.loglik
+
+# ============================================
+# SmootherWorkspace - Pre-allocated smoother storage
+# ============================================
+
+"""
+    SmootherWorkspace{T<:Real}
+
+Pre-allocated workspace for Kalman smoother operations.
+
+Allows in-place computation to avoid allocations when smoothing repeatedly.
+
+# Fields
+- `alpha`: Smoothed state means E[αₜ | y₁:ₙ] (m × n)
+- `V`: Smoothed state covariances Var[αₜ | y₁:ₙ] (m × m × n)
+- `r`: Smoothing recursion auxiliary vector (m × n)
+- `N`: Smoothing recursion auxiliary matrix (m × m × n)
+
+# Constructor
+    SmootherWorkspace(m::Int, n::Int, ::Type{T}=Float64) where T
+"""
+mutable struct SmootherWorkspace{T<:Real}
+    alpha::Matrix{T}       # m × n: smoothed states
+    V::Array{T,3}          # m × m × n: smoothed covariances
+    r::Matrix{T}           # m × n: smoothing recursion auxiliary
+    N::Array{T,3}          # m × m × n: smoothing recursion auxiliary
+end
+
+function SmootherWorkspace(m::Int, n::Int, ::Type{T}=Float64) where T
+    SmootherWorkspace{T}(
+        Matrix{T}(undef, m, n),
+        Array{T}(undef, m, m, n),
+        Matrix{T}(undef, m, n),
+        Array{T}(undef, m, m, n)
+    )
+end
+
+"""
+    smoothed_states(w::SmootherWorkspace) -> Matrix
+
+Return smoothed state means E[αₜ | y₁:ₙ] from workspace.
+"""
+smoothed_states(w::SmootherWorkspace) = w.alpha
+
+"""
+    variances_smoothed_states(w::SmootherWorkspace) -> Array{T,3}
+
+Return smoothed state covariances Var[αₜ | y₁:ₙ] from workspace.
+"""
+variances_smoothed_states(w::SmootherWorkspace) = w.V

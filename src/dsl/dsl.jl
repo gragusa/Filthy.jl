@@ -49,6 +49,7 @@ module DSL
 using LinearAlgebra
 using TransformVariables
 using ..Filthy: KFParms, KFParms_static, kalman_loglik
+using ..Filthy: kalman_filter_full, kalman_smoother_full
 using ..Filthy: to_static_if_small, STATIC_THRESHOLD
 
 include("types.jl")
@@ -59,13 +60,14 @@ include("matrix_helpers.jl")
 include("expressions.jl")
 include("bayesian.jl")
 include("optimization.jl")
+include("em.jl")
 
 # Re-export key functions
 export SSMParameter, SSMSpec, FixedValue, ParameterRef
 export param_names, n_params, initial_values, param_bounds, param_index
 export build_kfparms, build_initial_state, build_linear_state_space
 export objective_function, ssm_loglik
-export local_level, local_linear_trend, ar1, arma, dynamic_factor
+export local_level, local_linear_trend, ar1, arma, dynamic_factor, dns_model
 export custom_ssm, FreeParam, @P
 
 # Matrix helpers
@@ -73,7 +75,7 @@ export diag_free, scalar_free, diag_fixed
 export identity_mat, zeros_mat, ones_mat
 export lower_triangular_free, symmetric_free
 export selection_mat, companion_mat
-export cov_free, CovFree
+export cov_free, CovFree, CovMatrixExpr
 
 # Functional expressions (for DNS, Svensson, etc.)
 export ParamExpr, MatrixExpr
@@ -90,5 +92,9 @@ export FlatPrior, NormalPrior, NormalPriorVec, InverseGammaPrior, CompositePrior
 
 # Optimization (Optimization.jl integration)
 export optimize_ssm, optimize_ssm_with_stderr
+
+# EM algorithm
+export em_ssm, EMResult, em_ssm_full_cov
+export profile_em_ssm, ProfileEMResult
 
 end # module DSL

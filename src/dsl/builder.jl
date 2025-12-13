@@ -9,20 +9,19 @@ Use `custom_ssm` when the pre-built templates don't fit your model.
 export custom_ssm, FreeParam, @P
 
 """
-    FreeParam(name; init=0.0, lower=-Inf, upper=Inf, transform=identity)
+    FreeParam(name; init=0.0, lower=-Inf, upper=Inf)
 
 Mark a matrix element as a free parameter to be estimated.
 
 # Arguments
 - `name::Symbol`: Parameter name
 - `init`: Initial value for optimization
-- `lower`, `upper`: Bounds for optimization
-- `transform`: Function to apply (e.g., `x -> x^2` for variance parameters)
+- `lower`, `upper`: Bounds for optimization (TransformVariables.jl handles transformations)
 
 # Example
 ```julia
-# A variance parameter (estimated as std dev, stored as variance)
-H = [FreeParam(:σ_obs, init=10.0, transform=x->x^2)]
+# A variance parameter (estimate variance directly, lower=0 triggers asℝ₊)
+H = [FreeParam(:var_obs, init=100.0, lower=0.0)]
 
 # A coefficient with bounds
 T = [FreeParam(:ρ, init=0.8, lower=-0.99, upper=0.99)]
@@ -33,11 +32,10 @@ struct FreeParam
     init::Float64
     lower::Float64
     upper::Float64
-    transform::Function
 end
 
-function FreeParam(name::Symbol; init=0.0, lower=-Inf, upper=Inf, transform=identity)
-    FreeParam(name, Float64(init), Float64(lower), Float64(upper), transform)
+function FreeParam(name::Symbol; init=0.0, lower=-Inf, upper=Inf)
+    FreeParam(name, Float64(init), Float64(lower), Float64(upper))
 end
 
 # Short alias for convenience
@@ -83,16 +81,16 @@ Use regular numbers for fixed values.
 ```julia
 spec = custom_ssm(
     Z = [1.0],
-    H = [FreeParam(:σ_obs, init=15.0, transform=x->x^2)],
+    H = [FreeParam(:var_obs, init=225.0, lower=0.0)],
     T = [1.0],
     R = [1.0],
-    Q = [FreeParam(:σ_level, init=10.0, transform=x->x^2)],
+    Q = [FreeParam(:var_level, init=100.0, lower=0.0)],
     a1 = [0.0],
     P1 = [1e7]
 )
 
 # Check parameters
-param_names(spec)  # [:σ_obs, :σ_level]
+param_names(spec)  # [:var_obs, :var_level]
 ```
 
 # Example: Local Linear Trend
@@ -101,12 +99,12 @@ using LinearAlgebra
 
 spec = custom_ssm(
     Z = [1.0 0.0],
-    H = [FreeParam(:σ_obs, init=1.0, transform=x->x^2)],
+    H = [FreeParam(:var_obs, init=1.0, lower=0.0)],
     T = [1.0 1.0;
          0.0 1.0],
     R = Matrix(1.0I, 2, 2),
-    Q = [FreeParam(:σ_level, init=0.1, transform=x->x^2)  0.0;
-         0.0  FreeParam(:σ_slope, init=0.01, transform=x->x^2)],
+    Q = [FreeParam(:var_level, init=0.01, lower=0.0)  0.0;
+         0.0  FreeParam(:var_slope, init=0.0001, lower=0.0)],
     a1 = [0.0, 0.0],
     P1 = 1e7 * Matrix(1.0I, 2, 2)
 )
@@ -116,10 +114,10 @@ spec = custom_ssm(
 ```julia
 spec = custom_ssm(
     Z = [1.0],
-    H = [FreeParam(:σ_obs, init=1.0, transform=x->x^2)],
+    H = [FreeParam(:var_obs, init=1.0, lower=0.0)],
     T = [0.9],  # Fixed AR coefficient
     R = [1.0],
-    Q = [FreeParam(:σ_state, init=1.0, transform=x->x^2)],
+    Q = [FreeParam(:var_state, init=1.0, lower=0.0)],
     a1 = [0.0],
     P1 = [1e4]
 )
@@ -306,12 +304,8 @@ function _build_matrix_spec(mat::Matrix{MatrixInput}, params::Vector{SSMParamete
                     init=elem.init, lower=elem.lower, upper=elem.upper))
                 push!(param_set, elem.name)
             end
-            # Create parameter reference with transform
-            if elem.transform === identity
-                spec.elements[(i, j)] = ParameterRef(elem.name)
-            else
-                spec.elements[(i, j)] = ParameterRef(elem.name, elem.transform)
-            end
+            # Create parameter reference
+            spec.elements[(i, j)] = ParameterRef(elem.name)
         else
             # Fixed value
             spec.elements[(i, j)] = FixedValue(Float64(elem))
@@ -333,11 +327,7 @@ function _build_vector_spec(vec::Vector{MatrixInput}, params::Vector{SSMParamete
                     init=elem.init, lower=elem.lower, upper=elem.upper))
                 push!(param_set, elem.name)
             end
-            if elem.transform === identity
-                push!(elems, ParameterRef(elem.name))
-            else
-                push!(elems, ParameterRef(elem.name, elem.transform))
-            end
+            push!(elems, ParameterRef(elem.name))
         else
             push!(elems, FixedValue(Float64(elem)))
         end

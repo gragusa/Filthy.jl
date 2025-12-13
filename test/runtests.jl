@@ -75,28 +75,41 @@ end
     p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
     result = kalman_filter_full(p, y, a1_nile, P1_nile)
 
-    @test haskey(result, :loglik)
-    @test haskey(result, :a)
-    @test haskey(result, :P)
-    @test haskey(result, :v)
-    @test haskey(result, :F)
-    @test haskey(result, :K)
+    # Check struct type
+    @test result isa Filthy.KalmanFilterResult
+
+    # Check fields exist via hasproperty
+    @test hasproperty(result, :loglik)
+    @test hasproperty(result, :at)
+    @test hasproperty(result, :Pt)
+    @test hasproperty(result, :att)
+    @test hasproperty(result, :Ptt)
+    @test hasproperty(result, :vt)
+    @test hasproperty(result, :Ft)
+    @test hasproperty(result, :Kt)
 
     n = size(y, 2)
-    # States have n+1 entries: initial + after each observation
-    @test size(result.a) == (1, n + 1)
-    @test size(result.P) == (1, 1, n + 1)
+    # States have n entries (one per time point)
+    @test size(result.at) == (1, n)
+    @test size(result.Pt) == (1, 1, n)
+    @test size(result.att) == (1, n)
+    @test size(result.Ptt) == (1, 1, n)
     # Innovations have n entries (one per observation)
-    @test size(result.v) == (1, n)
-    @test size(result.F) == (1, 1, n)
+    @test size(result.vt) == (1, n)
+    @test size(result.Ft) == (1, 1, n)
 
-    # First state is initial state
-    @test result.a[1, 1] == a1_nile[1]
-    @test result.P[1, 1, 1] == P1_nile[1, 1]
+    # First predicted state is initial state
+    @test result.at[1, 1] == a1_nile[1]
+    @test result.Pt[1, 1, 1] == P1_nile[1, 1]
 
     # Log-likelihood should match kalman_loglik
     ll_direct = kalman_loglik(p, y, a1_nile, P1_nile)
     @test isapprox(result.loglik, ll_direct, rtol=1e-10)
+
+    # Test accessor methods
+    @test Filthy.predicted_states(result) === result.at
+    @test Filthy.filtered_states(result) === result.att
+    @test Filthy.loglikelihood(result) == result.loglik
 end
 
 @testset "kalman_smoother" begin
@@ -104,8 +117,8 @@ end
     result = kalman_filter_full(p, y, a1_nile, P1_nile)
 
     alpha_smooth, V_smooth = kalman_smoother(Z_nile, T_nile,
-                                              result.a, result.P,
-                                              result.v, result.F)
+                                              result.at, result.Pt,
+                                              result.vt, result.Ft)
 
     n = size(y, 2)
     @test size(alpha_smooth) == (1, n)
@@ -117,9 +130,9 @@ end
     # Smoothed variances should be positive
     @test all(V_smooth .> 0)
 
-    # Smoothed variance should be smaller than filtered variance
+    # Smoothed variance should be smaller than predicted variance
     for t in 2:n-1
-        @test V_smooth[1, 1, t] <= result.P[1, 1, t]
+        @test V_smooth[1, 1, t] <= result.Pt[1, 1, t]
     end
 
     # Reference value at t=100 from D&K Table 2.1
@@ -132,7 +145,7 @@ end
         Q = [theta[2];;]
         p = KFParms(Z_nile, H, T_nile, R_nile, Q)
         result = kalman_filter_full(p, y, a1_nile, P1_nile)
-        alpha, V = kalman_smoother(Z_nile, T_nile, result.a, result.P, result.v, result.F)
+        alpha, V = kalman_smoother(Z_nile, T_nile, result.at, result.Pt, result.vt, result.Ft)
         return sum(alpha)
     end
 
@@ -159,10 +172,14 @@ end
 end
 
 @testset "kalman_smoother_scalar" begin
-    ll, a_pred, P_pred, v, F = kalman_filter_full_scalar(
+    result_scalar = kalman_filter_full_scalar(
         1.0, 15099.0, 1.0, 1.0, 1469.1, 0.0, 1e7, vec(nile))
 
-    alpha, V = kalman_smoother_scalar(1.0, 1.0, a_pred, P_pred, v, F)
+    # Check struct type
+    @test result_scalar isa Filthy.KalmanFilterResultScalar
+
+    alpha, V = kalman_smoother_scalar(1.0, 1.0, result_scalar.at, result_scalar.Pt,
+                                       result_scalar.vt, result_scalar.Ft)
 
     n = length(nile)
     @test length(alpha) == n
@@ -171,10 +188,22 @@ end
     # Should match matrix version
     p = KFParms(Z_nile, H_nile, T_nile, R_nile, Q_nile)
     result = kalman_filter_full(p, y, a1_nile, P1_nile)
-    alpha_mat, V_mat = kalman_smoother(Z_nile, T_nile, result.a, result.P, result.v, result.F)
+    alpha_mat, V_mat = kalman_smoother(Z_nile, T_nile, result.at, result.Pt, result.vt, result.Ft)
 
     @test isapprox(alpha, vec(alpha_mat), rtol=1e-10)
 end
 
 # DSL tests
 include("dsl_tests.jl")
+
+# EM algorithm tests (uses TestItems)
+include("em_tests.jl")
+
+# Generalized EM tests (MARSS validation - diagonal covariances)
+include("em_generalized_tests.jl")
+
+# General EM tests (MARSS validation - full Z and T estimation)
+include("em_general_tests.jl")
+
+# FKF validation tests (R FKF package comparison)
+include("fkf_validation_tests.jl")

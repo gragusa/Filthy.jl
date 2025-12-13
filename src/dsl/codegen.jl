@@ -9,6 +9,8 @@ Supports both:
 - NamedTuple parameters (accessed by name, from TransformVariables)
 """
 
+export CovMatrixExpr
+
 using LinearAlgebra
 using TransformVariables
 using TransformVariables: corr_cholesky_factor
@@ -87,11 +89,25 @@ Represents Σ = D * Corr * D where:
 - `n::Int`: Matrix dimension
 - `σ_param_names::Vector{Symbol}`: Names of standard deviation parameters
 - `corr_param_names::Vector{Symbol}`: Names of correlation parameters (unconstrained)
+- `var_init::Vector{Float64}`: Initial variance values (to avoid sqrt/square roundoff)
 """
 struct CovMatrixExpr
     n::Int
     σ_param_names::Vector{Symbol}
     corr_param_names::Vector{Symbol}
+    var_init::Vector{Float64}
+
+    # Constructor with var_init
+    function CovMatrixExpr(n::Int, σ_param_names::Vector{Symbol},
+                           corr_param_names::Vector{Symbol}, var_init::Vector{Float64})
+        new(n, σ_param_names, corr_param_names, var_init)
+    end
+
+    # Backwards-compatible constructor without var_init
+    function CovMatrixExpr(n::Int, σ_param_names::Vector{Symbol},
+                           corr_param_names::Vector{Symbol})
+        new(n, σ_param_names, corr_param_names, Float64[])
+    end
 end
 
 """
@@ -198,11 +214,7 @@ function evaluate_element(elem::FixedValue, θ::NamedTuple)
 end
 
 function evaluate_element(elem::ParameterRef, θ::NamedTuple)
-    val = getproperty(θ, elem.name)
-    if elem.transform !== nothing
-        val = elem.transform(val)
-    end
-    val
+    getproperty(θ, elem.name)
 end
 
 function evaluate_element(elem::Expr, θ::NamedTuple)
@@ -326,11 +338,7 @@ end
 
 function evaluate_element(elem::ParameterRef, theta::AbstractVector, param_map::Dict)
     idx = param_map[elem.name]
-    val = theta[idx]
-    if elem.transform !== nothing
-        val = elem.transform(val)
-    end
-    val
+    theta[idx]
 end
 
 function evaluate_element(elem::Expr, theta::AbstractVector, param_map::Dict)

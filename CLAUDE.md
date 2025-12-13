@@ -4,7 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Filthy.jl is a Julia package for Linear State Space models (Kalman filtering and smoothing). It supports both exact and inexact diffuse initialization, with implementations optimized for scalar, matrix, and static array types.
+Filthy.jl is a Julia package for Linear State Space models (Kalman filtering and smoothing). It provides:
+
+- **High-performance Kalman filter/smoother**: AD-compatible implementations for scalar and matrix observations
+- **Ergonomic DSL**: Domain-specific language for model specification with automatic parameter handling
+- **Pre-built templates**: Local level, local linear trend, AR(1), ARMA, and dynamic factor models
+- **Optimization integration**: Seamless MLE via Optimization.jl with automatic differentiation
+- **Bayesian support**: Prior specification and LogDensityProblems.jl interface for MCMC
+- **StaticArrays support**: Automatic conversion for small models (dimensions ≤ 13)
 
 ## Build and Test Commands
 
@@ -20,36 +27,58 @@ julia --project -e 'using Filthy'
 
 # Run feature-specific tests (when using TestItems.jl)
 TI_TAGS=filter,smoke julia --project -e 'using Pkg; Pkg.test()'
+
+# Build documentation
+cd docs && julia --project -e 'include("make.jl")'
+# View at docs/build/index.html
 ```
 
-**Note:** Tests require `Nile.csv` data file in the test directory and depend on CSV.jl.
+**Note:** Tests require `Nile.csv` data file in the test directory.
+
+## Documentation
+
+Full documentation is in `docs/` using Documenter.jl:
+
+- `docs/src/index.md` - Home page and overview
+- `docs/src/tutorials/getting_started.md` - Basic Kalman filter tutorial
+- `docs/src/tutorials/custom_models.md` - Custom SSM specification
+- `docs/src/tutorials/dynamic_factor.md` - Dynamic factor models
+- `docs/src/api/` - API reference pages
 
 ## Architecture
 
 ### Core Types (`src/types.jl`)
 
-- **`LinearStateSpace`** - Main model container holding parameters, filtered/smoothed states, initial values, and caches
 - **`KFParms`** - State space parameters (Z, H, T, R, Q matrices)
-- **`KFFiltered`** - Filtered state estimates (a, P, Pinf, Pstar for diffuse case)
-- **`KFSmoothed`** - Smoothed state estimates
-- **`KFCache`** - Preallocated workspace for filter computations
-- **`Masked`** - Parameter masking for optimization (tracks free vs fixed parameters)
-- **`SSMOptim`** - MathProgBase evaluator for maximum likelihood estimation
+- **`KFParms_static`** - Constructor with automatic StaticArrays conversion
+
+### DSL Types (`src/dsl/types.jl`)
+
+- **`SSMSpec`** - Complete model specification (parameters, matrices, initial state)
+- **`SSMParameter`** - Single estimable parameter with bounds and initial value
+- **`FixedValue`** / **`ParameterRef`** - Fixed vs free matrix elements
+- **`CovFree`** - Full positive-definite covariance matrix specification
 
 ### Module Organization
 
-- `src/Filthy.jl` - Main module, constructors, high-level API (`fit`, `simulate`, `smooth!`)
-- `src/filter.jl` - Kalman filter implementation (`filter!`, `filterstep`, diffuse variants)
-- `src/methods.jl` - Helper functions, type utilities, likelihood computation
-- `src/mpb.jl` - MathProgBase interface for optimization
-
-### Key Design Patterns
-
-**Multiple dispatch on array types:** The package dispatches on `AbstractFloat`, `AbstractArray`, and `StaticArrays.StaticMatrix` to provide type-stable, allocation-free paths for different use cases.
-
-**Diffuse initialization:** Handled via `Val{true/false}` dispatch in `onlinefilterstep!` to separate diffuse and non-diffuse filter paths.
-
-**GrowableArrays:** Filter results stored in `GrowableArray` containers for efficient online filtering.
+```
+src/
+├── Filthy.jl          # Main module, exports
+├── types.jl           # KFParms, StaticArrays utilities
+├── filter_ad.jl       # Kalman filter (AD-compatible)
+├── smoother_ad.jl     # Kalman smoother (RTS)
+├── predict.jl         # Prediction, forecasting, missing data
+└── dsl/
+    ├── dsl.jl         # DSL submodule
+    ├── types.jl       # SSMParameter, SSMSpec, CovFree
+    ├── codegen.jl     # Build KFParms from SSMSpec
+    ├── templates.jl   # Pre-built models (local_level, ar1, arma, dynamic_factor)
+    ├── builder.jl     # custom_ssm function
+    ├── matrix_helpers.jl  # diag_free, cov_free, companion_mat, etc.
+    ├── expressions.jl # MatrixExpr for parameter-dependent matrices
+    ├── bayesian.jl    # SSMLogDensity, priors, transformations
+    └── optimization.jl # optimize_ssm integration
+```
 
 ### State Space Model Formulation
 
@@ -58,18 +87,67 @@ Observation:  yₜ = Z αₜ + εₜ,  εₜ ~ N(0, H)
 State:        αₜ₊₁ = T αₜ + R ηₜ,  ηₜ ~ N(0, Q)
 ```
 
-Constructor supports three parametrizations:
-1. Scalar (all parameters are `Float64`)
-2. Matrix (`Array{Float64}`)
-3. Static (`StaticArrays.SMatrix/SVector`)
+### Key Design Patterns
+
+**DSL-based specification:** Models are specified via `SSMSpec` which holds parameter metadata and matrix specifications. The `build_linear_state_space` function converts specs + parameter values into `KFParms`.
+
+**NamedTuple parameters:** Parameters flow as NamedTuples for clarity. TransformVariables.jl handles constrained→unconstrained mapping.
+
+**Multiple dispatch on array types:** Dispatches on scalar, matrix, and StaticArrays for type-stable paths.
+
+**Covariance parameterization:** Full covariance matrices use Σ = D * Corr * D decomposition via `cov_free()`, where Corr is built from `TransformVariables.corr_cholesky_factor`.
+
+### Key APIs
+
+**Templates:**
+```julia
+spec = local_level(var_obs_init=225.0)  # variance parameters use var_ prefix
+spec = local_linear_trend()
+spec = ar1(ρ_init=0.9)
+spec = arma(2, 1)
+spec = dynamic_factor(n_obs, n_factors; factor_lags=2, obs_lags=1, correlated_errors=true)
+```
+
+**Custom models:**
+```julia
+spec = custom_ssm(
+    Z = [1.0 0.0],
+    H = [FreeParam(:var_obs, init=1.0, lower=0.0)],  # estimate variance directly
+    T = [1.0 1.0; 0.0 1.0],
+    R = identity_mat(2),
+    Q = diag_free(2, :var_state),  # or cov_free(2, :Q) for correlated
+    a1 = [0.0, 0.0],
+    P1 = 1e7 * identity_mat(2)
+)
+```
+
+**Parameter conventions:**
+- Variance parameters use `var_` prefix (e.g., `:var_obs`, `:var_level`)
+- Parameters are estimated directly (no transforms) - TransformVariables.jl handles bounds
+- `lower=0.0` triggers `asℝ₊` transform for positive parameters
+- `cov_free()` uses std dev parameters internally (D*Corr*D decomposition)
+
+**Estimation:**
+```julia
+result = optimize_ssm(spec, y)
+θ_mle = result.θ  # NamedTuple
+```
+
+**Filter/Smoother:**
+```julia
+ss = build_linear_state_space(spec, θ, y)
+ll = kalman_loglik(ss.p, y, ss.a1, ss.P1)
+filt = kalman_filter_full(ss.p, y, ss.a1, ss.P1)
+smooth = kalman_smoother(ss.p, y, ss.a1, ss.P1)
+```
 
 ### Dependencies
 
 - `StaticArrays` - Fixed-size arrays for performance
-- `GrowableArrays` - Dynamically resizable arrays for online filtering
 - `ForwardDiff` - Automatic differentiation for ML estimation
-- `MathProgBase` - Optimization interface
-- `Parameters` - `@unpack` macro for struct field extraction
+- `TransformVariables` - Parameter transformations (bounds → unconstrained)
+- `LogDensityProblems` - Interface for Bayesian inference
+- `Optimization` / `OptimizationOptimJL` - MLE optimization
 
 ---
 

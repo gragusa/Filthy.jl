@@ -45,7 +45,7 @@ DNS loading matrix Z(λ)), use `MatrixExpr` to define it.
    - `lower::Float64` - lower bound (use -Inf for unbounded)
    - `upper::Float64` - upper bound (use Inf for unbounded)
    - `init::Float64` - initial value for optimization
-   - `transform` - transformation function (default: exp for positive params)
+   TransformVariables.jl automatically handles constrained → unconstrained mapping.
 
    Example:
        [SSMParameter(:λ, 0.001, 0.5, 0.0609)]  # positional: name, lower, upper, init
@@ -218,14 +218,13 @@ Q_expr = MatrixExpr(
 )
 
 # Build the DNS state-space model
+# Note: T matrix is diagonal with AR coefficients (not variances), so use unbounded params
 dns_spec = custom_ssm(
     Z = Z_expr,
     H = H_expr,
-    T = diag_free(n_factors, :ϕ,              # AR(1) persistence for each factor
-                  lower = -0.999,
-                  upper = 0.999,
-                  init = 0.99,
-                  transform = identity),
+    T = [FreeParam(:ϕ_1, init=0.99, lower=-0.999, upper=0.999) 0.0 0.0;
+         0.0 FreeParam(:ϕ_2, init=0.99, lower=-0.999, upper=0.999) 0.0;
+         0.0 0.0 FreeParam(:ϕ_3, init=0.99, lower=-0.999, upper=0.999)],
     R = identity_mat(n_factors),
     Q = Q_expr,
     a1 = [mean(y[1,:]), 0.0, 0.0],            # Initial state: level ≈ short rate mean

@@ -14,28 +14,28 @@ estimated vs fixed:
 ## Examples
 
 ```julia
-# Estimate both σ_obs and σ_level (default)
+# Estimate both var_obs and var_level (default)
 spec = local_level()
 
-# Fix σ_obs at 15.0, estimate σ_level starting from 10.0
-spec = local_level(σ_obs=15.0, σ_level=10.0)
+# Fix var_obs at 225.0, estimate var_level starting from 100.0
+spec = local_level(var_obs=225.0, var_level=100.0)
 # Wait, that's ambiguous! Use explicit :free marker:
 
-# Fix σ_obs at 15.0, estimate σ_level
-spec = local_level(σ_obs=15.0, σ_level=:free)
+# Fix var_obs at 225.0, estimate var_level
+spec = local_level(var_obs=225.0, var_level=:free)
 
-# Estimate σ_obs, fix σ_level at 10.0
-spec = local_level(σ_obs=:free, σ_level=10.0)
+# Estimate var_obs, fix var_level at 100.0
+spec = local_level(var_obs=:free, var_level=100.0)
 
 # Set initial values for estimation
-spec = local_level(σ_obs=(init=15.0,), σ_level=(init=10.0,))
+spec = local_level(var_obs=(init=225.0,), var_level=(init=100.0,))
 
 # Full control: bounds + initial value
-spec = local_level(σ_obs=(init=15.0, lower=1.0, upper=200.0), σ_level=:free)
+spec = local_level(var_obs=(init=225.0, lower=1.0, upper=40000.0), var_level=:free)
 ```
 """
 
-export local_level, local_linear_trend, ar1, arma, dynamic_factor
+export local_level, local_linear_trend, ar1, arma, dynamic_factor, dns_model
 
 """
     ParamSpec
@@ -70,18 +70,18 @@ function parse_param_spec(name::Symbol, spec::NamedTuple, default_init, default_
 end
 
 """
-    local_level(; σ_obs=:free, σ_level=:free, diffuse=true)
+    local_level(; var_obs=:free, var_level=:free, diffuse=true)
 
 Create specification for local level (random walk + noise) model.
 
 Model:
-    yₜ = μₜ + εₜ,  εₜ ~ N(0, σ²_obs)
-    μₜ₊₁ = μₜ + ηₜ,  ηₜ ~ N(0, σ²_level)
+    yₜ = μₜ + εₜ,  εₜ ~ N(0, var_obs)
+    μₜ₊₁ = μₜ + ηₜ,  ηₜ ~ N(0, var_level)
 
 # Arguments
-- `σ_obs`: Observation noise std dev. Use `:free` to estimate, a number to fix,
-           or `(init=, lower=, upper=)` for custom estimation settings.
-- `σ_level`: Level noise std dev. Same options as σ_obs.
+- `var_obs`: Observation noise variance. Use `:free` to estimate, a number to fix,
+             or `(init=, lower=, upper=)` for custom estimation settings.
+- `var_level`: Level noise variance. Same options as var_obs.
 - `diffuse`: Use diffuse initialization (default: true)
 
 # Examples
@@ -89,17 +89,17 @@ Model:
 # Estimate both (default)
 spec = local_level()
 
-# Fix observation noise, estimate level noise
-spec = local_level(σ_obs=15.0, σ_level=:free)
+# Fix observation variance, estimate level variance
+spec = local_level(var_obs=225.0, var_level=:free)
 
 # Custom initial value and bounds
-spec = local_level(σ_obs=(init=15.0, lower=1.0, upper=100.0))
+spec = local_level(var_obs=(init=225.0, lower=1.0, upper=10000.0))
 ```
 """
-function local_level(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free, diffuse=true)
-    # Parse parameter specifications
-    obs_free, obs_spec = parse_param_spec(:σ_obs, σ_obs, 1.0, 1e-6, Inf)
-    level_free, level_spec = parse_param_spec(:σ_level, σ_level, 1.0, 1e-6, Inf)
+function local_level(; var_obs::ParamSpec=:free, var_level::ParamSpec=:free, diffuse=true)
+    # Parse parameter specifications (variance parameters, lower=0.0)
+    obs_free, obs_spec = parse_param_spec(:var_obs, var_obs, 1.0, 0.0, Inf)
+    level_free, level_spec = parse_param_spec(:var_level, var_level, 1.0, 0.0, Inf)
 
     # Build parameter list (only free parameters)
     params = SSMParameter{Float64}[]
@@ -110,12 +110,12 @@ function local_level(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free, diffu
     Z = SSMMatrixSpec((1, 1))
     Z.elements[(1, 1)] = FixedValue(1.0)
 
-    # H = σ²_obs (either ParameterRef or FixedValue)
+    # H = var_obs (either ParameterRef or FixedValue)
     H = SSMMatrixSpec((1, 1))
     if obs_free
-        H.elements[(1, 1)] = ParameterRef(:σ_obs, x -> x^2)
+        H.elements[(1, 1)] = ParameterRef(:var_obs)
     else
-        H.elements[(1, 1)] = FixedValue(obs_spec.value^2)
+        H.elements[(1, 1)] = FixedValue(obs_spec.value)
     end
 
     # T = [1]
@@ -126,12 +126,12 @@ function local_level(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free, diffu
     R = SSMMatrixSpec((1, 1))
     R.elements[(1, 1)] = FixedValue(1.0)
 
-    # Q = σ²_level (either ParameterRef or FixedValue)
+    # Q = var_level (either ParameterRef or FixedValue)
     Q = SSMMatrixSpec((1, 1))
     if level_free
-        Q.elements[(1, 1)] = ParameterRef(:σ_level, x -> x^2)
+        Q.elements[(1, 1)] = ParameterRef(:var_level)
     else
-        Q.elements[(1, 1)] = FixedValue(level_spec.value^2)
+        Q.elements[(1, 1)] = FixedValue(level_spec.value)
     end
 
     # Initial state
@@ -144,27 +144,27 @@ function local_level(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free, diffu
 end
 
 """
-    local_linear_trend(; σ_obs=:free, σ_level=:free, σ_slope=:free, diffuse=true)
+    local_linear_trend(; var_obs=:free, var_level=:free, var_slope=:free, diffuse=true)
 
 Create specification for local linear trend model.
 
 Model:
-    yₜ = μₜ + εₜ,  εₜ ~ N(0, σ²_obs)
-    μₜ₊₁ = μₜ + νₜ + ηₜ,  ηₜ ~ N(0, σ²_level)
-    νₜ₊₁ = νₜ + ζₜ,  ζₜ ~ N(0, σ²_slope)
+    yₜ = μₜ + εₜ,  εₜ ~ N(0, var_obs)
+    μₜ₊₁ = μₜ + νₜ + ηₜ,  ηₜ ~ N(0, var_level)
+    νₜ₊₁ = νₜ + ζₜ,  ζₜ ~ N(0, var_slope)
 
 State: [μₜ, νₜ]
 
 # Arguments
-- `σ_obs`, `σ_level`, `σ_slope`: Use `:free` to estimate, a number to fix,
+- `var_obs`, `var_level`, `var_slope`: Use `:free` to estimate, a number to fix,
   or `(init=, lower=, upper=)` for custom settings.
 """
-function local_linear_trend(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free,
-                              σ_slope::ParamSpec=:free, diffuse=true)
-    # Parse parameter specifications
-    obs_free, obs_spec = parse_param_spec(:σ_obs, σ_obs, 1.0, 1e-6, Inf)
-    level_free, level_spec = parse_param_spec(:σ_level, σ_level, 0.1, 1e-6, Inf)
-    slope_free, slope_spec = parse_param_spec(:σ_slope, σ_slope, 0.01, 1e-6, Inf)
+function local_linear_trend(; var_obs::ParamSpec=:free, var_level::ParamSpec=:free,
+                              var_slope::ParamSpec=:free, diffuse=true)
+    # Parse parameter specifications (variance parameters, lower=0.0)
+    obs_free, obs_spec = parse_param_spec(:var_obs, var_obs, 1.0, 0.0, Inf)
+    level_free, level_spec = parse_param_spec(:var_level, var_level, 0.01, 0.0, Inf)
+    slope_free, slope_spec = parse_param_spec(:var_slope, var_slope, 0.0001, 0.0, Inf)
 
     # Build parameter list (only free parameters)
     params = SSMParameter{Float64}[]
@@ -176,9 +176,9 @@ function local_linear_trend(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free
     Z = SSMMatrixSpec((1, 2))
     Z.elements[(1, 1)] = FixedValue(1.0)
 
-    # H = σ²_obs
+    # H = var_obs
     H = SSMMatrixSpec((1, 1))
-    H.elements[(1, 1)] = obs_free ? ParameterRef(:σ_obs, x -> x^2) : FixedValue(obs_spec.value^2)
+    H.elements[(1, 1)] = obs_free ? ParameterRef(:var_obs) : FixedValue(obs_spec.value)
 
     # T = [1 1; 0 1]
     T = SSMMatrixSpec((2, 2))
@@ -191,10 +191,10 @@ function local_linear_trend(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free
     R.elements[(1, 1)] = FixedValue(1.0)
     R.elements[(2, 2)] = FixedValue(1.0)
 
-    # Q = diag(σ²_level, σ²_slope)
+    # Q = diag(var_level, var_slope)
     Q = SSMMatrixSpec((2, 2))
-    Q.elements[(1, 1)] = level_free ? ParameterRef(:σ_level, x -> x^2) : FixedValue(level_spec.value^2)
-    Q.elements[(2, 2)] = slope_free ? ParameterRef(:σ_slope, x -> x^2) : FixedValue(slope_spec.value^2)
+    Q.elements[(1, 1)] = level_free ? ParameterRef(:var_level) : FixedValue(level_spec.value)
+    Q.elements[(2, 2)] = slope_free ? ParameterRef(:var_slope) : FixedValue(slope_spec.value)
 
     # Initial state
     a1 = [FixedValue(0.0), FixedValue(0.0)]
@@ -207,23 +207,23 @@ function local_linear_trend(; σ_obs::ParamSpec=:free, σ_level::ParamSpec=:free
 end
 
 """
-    ar1(; ρ=:free, σ_obs=:free, σ_state=:free)
+    ar1(; ρ=:free, var_obs=:free, var_state=:free)
 
 Create specification for AR(1) plus noise model.
 
 Model:
-    yₜ = xₜ + εₜ,  εₜ ~ N(0, σ²_obs)
-    xₜ₊₁ = ρ xₜ + ηₜ,  ηₜ ~ N(0, σ²_state)
+    yₜ = xₜ + εₜ,  εₜ ~ N(0, var_obs)
+    xₜ₊₁ = ρ xₜ + ηₜ,  ηₜ ~ N(0, var_state)
 
 # Arguments
 - `ρ`: AR coefficient (|ρ| < 1). Use `:free`, a number, or `(init=, lower=, upper=)`.
-- `σ_obs`, `σ_state`: Noise std devs. Same options.
+- `var_obs`, `var_state`: Noise variances. Same options.
 """
-function ar1(; ρ::ParamSpec=:free, σ_obs::ParamSpec=:free, σ_state::ParamSpec=:free)
+function ar1(; ρ::ParamSpec=:free, var_obs::ParamSpec=:free, var_state::ParamSpec=:free)
     # Parse parameter specifications
     rho_free, rho_spec = parse_param_spec(:ρ, ρ, 0.8, -0.9999, 0.9999)
-    obs_free, obs_spec = parse_param_spec(:σ_obs, σ_obs, 1.0, 1e-6, Inf)
-    state_free, state_spec = parse_param_spec(:σ_state, σ_state, 1.0, 1e-6, Inf)
+    obs_free, obs_spec = parse_param_spec(:var_obs, var_obs, 1.0, 0.0, Inf)
+    state_free, state_spec = parse_param_spec(:var_state, var_state, 1.0, 0.0, Inf)
 
     # Build parameter list
     params = SSMParameter{Float64}[]
@@ -235,9 +235,9 @@ function ar1(; ρ::ParamSpec=:free, σ_obs::ParamSpec=:free, σ_state::ParamSpec
     Z = SSMMatrixSpec((1, 1))
     Z.elements[(1, 1)] = FixedValue(1.0)
 
-    # H = σ²_obs
+    # H = var_obs
     H = SSMMatrixSpec((1, 1))
-    H.elements[(1, 1)] = obs_free ? ParameterRef(:σ_obs, x -> x^2) : FixedValue(obs_spec.value^2)
+    H.elements[(1, 1)] = obs_free ? ParameterRef(:var_obs) : FixedValue(obs_spec.value)
 
     # T = [ρ]
     T = SSMMatrixSpec((1, 1))
@@ -247,9 +247,9 @@ function ar1(; ρ::ParamSpec=:free, σ_obs::ParamSpec=:free, σ_state::ParamSpec
     R = SSMMatrixSpec((1, 1))
     R.elements[(1, 1)] = FixedValue(1.0)
 
-    # Q = σ²_state
+    # Q = var_state
     Q = SSMMatrixSpec((1, 1))
-    Q.elements[(1, 1)] = state_free ? ParameterRef(:σ_state, x -> x^2) : FixedValue(state_spec.value^2)
+    Q.elements[(1, 1)] = state_free ? ParameterRef(:var_state) : FixedValue(state_spec.value)
 
     # Initial state (diffuse)
     a1 = [FixedValue(0.0)]
@@ -260,15 +260,15 @@ function ar1(; ρ::ParamSpec=:free, σ_obs::ParamSpec=:free, σ_state::ParamSpec
 end
 
 """
-    arma(p::Int, q::Int; ar_init=nothing, ma_init=nothing, σ_init=1.0)
+    arma(p::Int, q::Int; ar_init=nothing, ma_init=nothing, var_init=1.0)
 
 Create specification for ARMA(p,q) model in state-space form.
 
 Uses the innovations state-space representation.
 
-Parameters: ar coefficients φ₁...φₚ, ma coefficients θ₁...θᵧ, σ (innovation std dev)
+Parameters: ar coefficients φ₁...φₚ, ma coefficients θ₁...θᵧ, var (innovation variance)
 """
-function arma(p::Int, q::Int; ar_init=nothing, ma_init=nothing, σ_init=1.0)
+function arma(p::Int, q::Int; ar_init=nothing, ma_init=nothing, var_init=1.0)
     # State dimension is max(p, q+1)
     r = max(p, q + 1)
 
@@ -294,7 +294,7 @@ function arma(p::Int, q::Int; ar_init=nothing, ma_init=nothing, σ_init=1.0)
     end
 
     # Innovation variance
-    push!(params, SSMParameter(:σ; lower=1e-6, upper=Inf, init=σ_init))
+    push!(params, SSMParameter(:var; lower=0.0, upper=Inf, init=var_init))
 
     # Z = [1 0 ... 0]
     Z = SSMMatrixSpec((1, r))
@@ -325,9 +325,9 @@ function arma(p::Int, q::Int; ar_init=nothing, ma_init=nothing, σ_init=1.0)
         R.elements[(i + 1, 1)] = ParameterRef(Symbol("θ$i"))
     end
 
-    # Q = σ²
+    # Q = var
     Q = SSMMatrixSpec((1, 1))
-    Q.elements[(1, 1)] = ParameterRef(:σ, x -> x^2)
+    Q.elements[(1, 1)] = ParameterRef(:var)
 
     # Initial state (diffuse)
     a1 = [FixedValue(0.0) for _ in 1:r]
@@ -341,8 +341,8 @@ end
 
 """
     dynamic_factor(n_obs, n_factors; factor_lags=1, obs_lags=0, correlated_errors=false,
-                   loadings_init=0.5, ar_init=0.5, σ_obs_init=1.0,
-                   σ_factor_init=1.0, diffuse=true)
+                   loadings_init=0.5, ar_init=0.5, var_obs_init=1.0,
+                   var_factor_init=1.0, diffuse=true)
 
 Create specification for a dynamic factor model with VAR factor dynamics and
 optional lagged factor loadings.
@@ -382,8 +382,8 @@ All other loadings (including lagged) are free parameters.
                                    If false, H is diagonal (exact DFM).
 - `loadings_init::Real=0.5`: Initial value for free factor loadings
 - `ar_init::Real=0.5`: Initial value for AR coefficients (divided by lag number)
-- `σ_obs_init::Real=1.0`: Initial value for observation error std devs
-- `σ_factor_init::Real=1.0`: Initial value for factor innovation std devs
+- `var_obs_init::Real=1.0`: Initial value for observation error variances
+- `var_factor_init::Real=1.0`: Initial value for factor innovation variances
 - `diffuse::Bool=true`: Use diffuse initialization for factors
 
 # State Space Representation
@@ -427,9 +427,9 @@ spec = dynamic_factor(5, 2; factor_lags=1, obs_lags=2)
 - `λ0_i_j`: Contemporaneous loadings (i > j for identification in first k rows)
 - `λl_i_j`: Loadings for lag l (l = 1, ..., obs_lags), all free
 - `φ_i_l`: AR coefficient for factor i at lag l (l = 1, ..., factor_lags)
-- `σ_obs_i`: Observation error std devs (if correlated_errors=false)
-- `H_σ_i`, `H_corr_i`: Covariance parameters (if correlated_errors=true)
-- `σ_factor_i`: Factor innovation std devs
+- `var_obs_i`: Observation error variances (if correlated_errors=false)
+- `H_σ_i`, `H_corr_i`: Covariance parameters (if correlated_errors=true, σ for D*Corr*D)
+- `var_factor_i`: Factor innovation variances
 """
 function dynamic_factor(n_obs::Int, n_factors::Int;
                         factor_lags::Int=1,
@@ -437,8 +437,8 @@ function dynamic_factor(n_obs::Int, n_factors::Int;
                         correlated_errors::Bool=false,
                         loadings_init::Real=0.5,
                         ar_init::Real=0.5,
-                        σ_obs_init::Real=1.0,
-                        σ_factor_init::Real=1.0,
+                        var_obs_init::Real=1.0,
+                        var_factor_init::Real=1.0,
                         diffuse::Bool=true)
     # Validation
     n_factors < n_obs || throw(ArgumentError("n_factors must be < n_obs for identification"))
@@ -508,16 +508,17 @@ function dynamic_factor(n_obs::Int, n_factors::Int;
     # H matrix (observation errors): n_obs × n_obs
     # ==========================================
     if correlated_errors
-        # Full covariance matrix using CovMatrixExpr
+        # Full covariance matrix using CovMatrixExpr (D*Corr*D parameterization)
+        # Note: CovMatrixExpr uses std dev σ parameters (kept as-is per design decision)
         prefix = :H
         n = n_obs
 
-        # Create σ parameters (positive)
+        # Create σ parameters (positive std devs for D*Corr*D)
         σ_param_names = Symbol[]
         for i in 1:n
             pname = Symbol("$(prefix)_σ_$i")
             if !(pname in param_set)
-                push!(params, SSMParameter(pname; lower=0.0, upper=Inf, init=σ_obs_init))
+                push!(params, SSMParameter(pname; lower=0.0, upper=Inf, init=sqrt(var_obs_init)))
                 push!(param_set, pname)
             end
             push!(σ_param_names, pname)
@@ -539,13 +540,13 @@ function dynamic_factor(n_obs::Int, n_factors::Int;
         matrix_exprs[:H] = CovMatrixExpr(n, σ_param_names, corr_param_names)
         H = SSMMatrixSpec((n_obs, n_obs))  # Placeholder
     else
-        # Diagonal covariance
+        # Diagonal covariance (variance parameters)
         H = SSMMatrixSpec((n_obs, n_obs))
         for i in 1:n_obs
-            pname = Symbol("σ_obs_$i")
-            push!(params, SSMParameter(pname; lower=1e-6, upper=Inf, init=σ_obs_init))
+            pname = Symbol("var_obs_$i")
+            push!(params, SSMParameter(pname; lower=0.0, upper=Inf, init=var_obs_init))
             push!(param_set, pname)
-            H.elements[(i, i)] = ParameterRef(pname, x -> x^2)
+            H.elements[(i, i)] = ParameterRef(pname)
         end
     end
 
@@ -602,13 +603,13 @@ function dynamic_factor(n_obs::Int, n_factors::Int;
     # ==========================================
     # Q matrix (factor innovations): n_shocks × n_shocks
     # ==========================================
-    # Diagonal covariance for factor innovations
+    # Diagonal covariance for factor innovations (variance parameters)
     Q = SSMMatrixSpec((n_shocks, n_shocks))
     for i in 1:n_factors
-        pname = Symbol("σ_factor_$i")
-        push!(params, SSMParameter(pname; lower=1e-6, upper=Inf, init=σ_factor_init))
+        pname = Symbol("var_factor_$i")
+        push!(params, SSMParameter(pname; lower=0.0, upper=Inf, init=var_factor_init))
         push!(param_set, pname)
-        Q.elements[(i, i)] = ParameterRef(pname, x -> x^2)
+        Q.elements[(i, i)] = ParameterRef(pname)
     end
 
     # ==========================================
@@ -623,4 +624,277 @@ function dynamic_factor(n_obs::Int, n_factors::Int;
 
     SSMSpec(:DynamicFactor, n_states, n_obs, n_shocks, params,
             Z, H, T, R, Q, a1, P1, matrix_exprs)
+end
+
+# ============================================
+# Dynamic Nelson-Siegel Model
+# ============================================
+
+"""
+    dns_model(maturities; T_structure=:diagonal, H_structure=:diagonal,
+              Q_structure=:full, λ_init=0.0609, ...)
+
+Create specification for Dynamic Nelson-Siegel yield curve model.
+
+Model:
+    yₜ = Z(λ) fₜ + εₜ,  εₜ ~ N(0, H)
+    fₜ₊₁ = T fₜ + ηₜ,   ηₜ ~ N(0, Q)
+
+where:
+- yₜ is the p×1 vector of yields at different maturities
+- fₜ = [Lₜ, Sₜ, Cₜ]' is the 3×1 factor vector (Level, Slope, Curvature)
+- Z(λ) is the p×3 loading matrix dependent on decay parameter λ:
+  - Column 1: Level loading (all 1s)
+  - Column 2: Slope loading `(1 - exp(-λτ)) / (λτ)`
+  - Column 3: Curvature loading `(1 - exp(-λτ)) / (λτ) - exp(-λτ)`
+- H is the p×p observation covariance
+- T is the 3×3 factor dynamics matrix
+- Q is the 3×3 state innovation covariance
+
+# Arguments
+- `maturities::AbstractVector`: Vector of maturities (e.g., in months)
+- `T_structure::Symbol=:diagonal`: Factor dynamics structure
+  - `:full` - Full 3×3 VAR matrix (9 parameters: `T_1_1`, `T_1_2`, ..., `T_3_3`)
+  - `:diagonal` - Diagonal AR(1) (3 parameters: `T_L`, `T_S`, `T_C`)
+  - `:ar1` - Single AR coefficient for all factors (1 parameter: `φ`)
+- `H_structure::Symbol=:diagonal`: Observation error structure
+  - `:diagonal` - Diagonal (p parameters: `H_1`, ..., `H_p`)
+  - `:scalar` - Single variance for all (1 parameter: `H`)
+- `Q_structure::Symbol=:full`: State covariance structure
+  - `:full` - Full 3×3 covariance via Cholesky (6 parameters)
+  - `:diagonal` - Diagonal (3 parameters: `Q_L`, `Q_S`, `Q_C`)
+- `λ_init`, `λ_lower`, `λ_upper`: Decay parameter settings
+- `T_init`: Initial value for T diagonal elements (scalar or 3-vector)
+- `Q_init`: Initial value for Q variances (scalar or 3-vector)
+- `H_init`: Initial value for H variances (scalar or p-vector)
+- `diffuse::Bool=true`: Use diffuse initialization
+
+# Returns
+SSMSpec with Z as MatrixExpr (dependent on λ)
+
+# Estimation
+The model can be estimated via:
+1. `optimize_ssm(spec, y)` - Full MLE via gradient-based optimization
+2. `profile_em_ssm(spec, y)` - Profile likelihood over λ with EM for other parameters
+
+# Example
+```julia
+maturities = [3, 6, 12, 24, 60, 120]  # months
+
+# Standard DNS with diagonal T
+spec = dns_model(maturities)
+result = optimize_ssm(spec, yields)
+
+# DNS with full VAR dynamics (for profile EM)
+spec = dns_model(maturities; T_structure=:full, Q_structure=:full)
+result = profile_em_ssm(spec, yields; λ_grid=0.01:0.01:0.2)
+
+# Extract factors
+ss = build_linear_state_space(spec, result.θ, yields)
+smooth = kalman_smoother(ss.p, yields, ss.a1, ss.P1)
+```
+
+# Parameters Created
+- `λ`: Nelson-Siegel decay parameter
+- T matrix elements (depends on T_structure)
+- H variance elements (depends on H_structure)
+- Q covariance elements (depends on Q_structure)
+"""
+function dns_model(maturities::AbstractVector{<:Real};
+                   T_structure::Symbol=:diagonal,
+                   H_structure::Symbol=:diagonal,
+                   Q_structure::Symbol=:full,
+                   λ_init::Real=0.0609,
+                   λ_lower::Real=0.001,
+                   λ_upper::Real=1.0,
+                   T_init=0.95,
+                   Q_init=0.01,
+                   H_init=0.01,
+                   diffuse::Bool=true)
+    p = length(maturities)
+    n_states = 3
+    n_shocks = 3
+
+    params = SSMParameter{Float64}[]
+    param_set = Set{Symbol}()
+    matrix_exprs = Dict{Symbol,Any}()
+
+    # ==========================================
+    # Z matrix: DNS loadings via MatrixExpr
+    # ==========================================
+    Z_expr = build_dns_loadings(maturities; λ_init=λ_init, λ_lower=λ_lower, λ_upper=λ_upper)
+    matrix_exprs[:Z] = Z_expr
+
+    # Add λ parameter from MatrixExpr
+    for z_param in Z_expr.params
+        push!(params, z_param)
+        push!(param_set, z_param.name)
+    end
+
+    # Placeholder Z spec (actual matrix built from MatrixExpr)
+    Z = SSMMatrixSpec((p, n_states))
+
+    # ==========================================
+    # T matrix: Factor dynamics
+    # ==========================================
+    T = _build_dns_T_spec(T_structure, T_init, params, param_set)
+
+    # ==========================================
+    # H matrix: Observation covariance
+    # ==========================================
+    H = _build_dns_H_spec(H_structure, p, H_init, params, param_set, matrix_exprs)
+
+    # ==========================================
+    # Q matrix: State covariance
+    # ==========================================
+    Q = _build_dns_Q_spec(Q_structure, Q_init, params, param_set, matrix_exprs)
+
+    # ==========================================
+    # R matrix: Identity selection
+    # ==========================================
+    R = SSMMatrixSpec((n_states, n_shocks))
+    for i in 1:n_states
+        R.elements[(i, i)] = FixedValue(1.0)
+    end
+
+    # ==========================================
+    # Initial state
+    # ==========================================
+    a1 = [FixedValue(0.0) for _ in 1:n_states]
+    P1_val = diffuse ? 1e7 : 1e4
+    P1 = SSMMatrixSpec((n_states, n_states))
+    for i in 1:n_states
+        P1.elements[(i, i)] = FixedValue(P1_val)
+    end
+
+    SSMSpec(:DNS, n_states, p, n_shocks, params, Z, H, T, R, Q, a1, P1, matrix_exprs)
+end
+
+"""
+Build T matrix specification for DNS model based on structure.
+"""
+function _build_dns_T_spec(structure::Symbol, T_init, params, param_set)
+    T = SSMMatrixSpec((3, 3))
+
+    if structure == :full
+        # Full 3×3 VAR matrix
+        for i in 1:3
+            for j in 1:3
+                pname = Symbol("T_$(i)_$(j)")
+                # Diagonal elements get T_init, off-diagonal get small values
+                if i == j
+                    init_val = T_init isa Real ? T_init : T_init[i]
+                else
+                    init_val = 0.0
+                end
+                push!(params, SSMParameter(pname; init=init_val, lower=-0.9999, upper=0.9999))
+                push!(param_set, pname)
+                T.elements[(i, j)] = ParameterRef(pname)
+            end
+        end
+    elseif structure == :diagonal
+        # Diagonal AR(1) for each factor
+        factor_names = [:T_L, :T_S, :T_C]
+        for (i, fname) in enumerate(factor_names)
+            init_val = T_init isa Real ? T_init : T_init[i]
+            push!(params, SSMParameter(fname; init=init_val, lower=-0.9999, upper=0.9999))
+            push!(param_set, fname)
+            T.elements[(i, i)] = ParameterRef(fname)
+        end
+    elseif structure == :ar1
+        # Single AR coefficient for all factors
+        init_val = T_init isa Real ? T_init : T_init[1]
+        push!(params, SSMParameter(:φ; init=init_val, lower=-0.9999, upper=0.9999))
+        push!(param_set, :φ)
+        for i in 1:3
+            T.elements[(i, i)] = ParameterRef(:φ)
+        end
+    else
+        throw(ArgumentError("T_structure must be :full, :diagonal, or :ar1, got :$structure"))
+    end
+
+    T
+end
+
+"""
+Build H matrix specification for DNS model based on structure.
+"""
+function _build_dns_H_spec(structure::Symbol, p::Int, H_init, params, param_set, matrix_exprs)
+    H = SSMMatrixSpec((p, p))
+
+    if structure == :diagonal
+        # Diagonal observation variances
+        for i in 1:p
+            pname = Symbol("H_$i")
+            init_val = H_init isa Real ? H_init : H_init[i]
+            push!(params, SSMParameter(pname; init=init_val, lower=0.0, upper=Inf))
+            push!(param_set, pname)
+            H.elements[(i, i)] = ParameterRef(pname)
+        end
+    elseif structure == :scalar
+        # Single variance for all observations
+        push!(params, SSMParameter(:H; init=H_init isa Real ? H_init : H_init[1], lower=0.0, upper=Inf))
+        push!(param_set, :H)
+        for i in 1:p
+            H.elements[(i, i)] = ParameterRef(:H)
+        end
+    else
+        throw(ArgumentError("H_structure must be :diagonal or :scalar, got :$structure"))
+    end
+
+    H
+end
+
+"""
+Build Q matrix specification for DNS model based on structure.
+"""
+function _build_dns_Q_spec(structure::Symbol, Q_init, params, param_set, matrix_exprs)
+    Q = SSMMatrixSpec((3, 3))
+
+    if structure == :full
+        # Full covariance via CovMatrixExpr (D*Corr*D parameterization)
+        prefix = :Q
+        n = 3
+
+        # Create σ parameters (std devs) and store original variances
+        σ_param_names = Symbol[]
+        var_init = Float64[]
+        factor_labels = [:L, :S, :C]
+        for (i, fl) in enumerate(factor_labels)
+            pname = Symbol("Q_σ_$fl")
+            var_val = Q_init isa Real ? Float64(Q_init) : Float64(Q_init[i])
+            init_val = sqrt(var_val)
+            push!(params, SSMParameter(pname; init=init_val, lower=0.0, upper=Inf))
+            push!(param_set, pname)
+            push!(σ_param_names, pname)
+            push!(var_init, var_val)  # Store original variance
+        end
+
+        # Create correlation parameters (unconstrained for Cholesky)
+        n_corr = n * (n - 1) ÷ 2  # 3 correlations
+        corr_param_names = Symbol[]
+        for i in 1:n_corr
+            pname = Symbol("Q_corr_$i")
+            push!(params, SSMParameter(pname; init=0.0, lower=-Inf, upper=Inf))
+            push!(param_set, pname)
+            push!(corr_param_names, pname)
+        end
+
+        # Store CovMatrixExpr with original variances
+        matrix_exprs[:Q] = CovMatrixExpr(n, σ_param_names, corr_param_names, var_init)
+
+    elseif structure == :diagonal
+        # Diagonal variances
+        factor_names = [:Q_L, :Q_S, :Q_C]
+        for (i, fname) in enumerate(factor_names)
+            init_val = Q_init isa Real ? Q_init : Q_init[i]
+            push!(params, SSMParameter(fname; init=init_val, lower=0.0, upper=Inf))
+            push!(param_set, fname)
+            Q.elements[(i, i)] = ParameterRef(fname)
+        end
+    else
+        throw(ArgumentError("Q_structure must be :full or :diagonal, got :$structure"))
+    end
+
+    Q
 end

@@ -40,17 +40,17 @@ end
     @test spec.n_obs == 1
     @test spec.n_shocks == 1
     @test length(spec.params) == 2
-    @test param_names(spec) == [:σ_obs, :σ_level]
+    @test param_names(spec) == [:var_obs, :var_level]
 
     # Check bounds
     lower, upper = param_bounds(spec)
-    @test all(lower .> 0)  # Variance params should be positive
+    @test all(lower .>= 0)  # Variance params should be non-negative
     @test all(upper .== Inf)
 
     # Fixed parameter
-    spec_fixed = local_level(σ_obs=15.0)
+    spec_fixed = local_level(var_obs=225.0)
     @test length(spec_fixed.params) == 1
-    @test param_names(spec_fixed) == [:σ_level]
+    @test param_names(spec_fixed) == [:var_level]
 end
 
 @testset "local_linear_trend template" begin
@@ -59,17 +59,17 @@ end
     @test spec.n_states == 2
     @test spec.n_obs == 1
     @test length(spec.params) == 3
-    @test :σ_obs in param_names(spec)
-    @test :σ_level in param_names(spec)
-    @test :σ_slope in param_names(spec)
+    @test :var_obs in param_names(spec)
+    @test :var_level in param_names(spec)
+    @test :var_slope in param_names(spec)
 end
 
 @testset "ar1 template" begin
     spec = ar1()
     @test spec.n_states == 1
     @test :ρ in param_names(spec)
-    @test :σ_obs in param_names(spec)
-    @test :σ_state in param_names(spec)
+    @test :var_obs in param_names(spec)
+    @test :var_state in param_names(spec)
 
     # Check ρ bounds
     lower, upper = param_bounds(spec)
@@ -94,18 +94,18 @@ end
 @testset "custom_ssm basic" begin
     spec = custom_ssm(
         Z = [1.0],
-        H = [FreeParam(:σ_obs, init=10.0, transform=x->x^2)],
+        H = [FreeParam(:var_obs, init=100.0, lower=0.0)],
         T = [1.0],
         R = [1.0],
-        Q = [FreeParam(:σ_level, init=5.0, transform=x->x^2)],
+        Q = [FreeParam(:var_level, init=25.0, lower=0.0)],
         a1 = [0.0],
         P1 = [1e7]
     )
 
     @test spec.n_states == 1
     @test spec.n_obs == 1
-    @test param_names(spec) == [:σ_obs, :σ_level]
-    @test initial_values(spec) == [10.0, 5.0]
+    @test param_names(spec) == [:var_obs, :var_level]
+    @test initial_values(spec) == [100.0, 25.0]
 end
 
 @testset "custom_ssm dimension validation" begin
@@ -124,11 +124,11 @@ end
 @testset "custom_ssm with mixed matrices" begin
     spec = custom_ssm(
         Z = [1.0 0.0],
-        H = [FreeParam(:σ_obs, init=1.0, transform=x->x^2);;],
+        H = [FreeParam(:var_obs, init=1.0, lower=0.0);;],
         T = [1.0 1.0; 0.0 1.0],
         R = Matrix(1.0I, 2, 2),
-        Q = [FreeParam(:σ_level, init=0.1, transform=x->x^2) 0.0;
-             0.0 FreeParam(:σ_slope, init=0.01, transform=x->x^2)],
+        Q = [FreeParam(:var_level, init=0.01, lower=0.0) 0.0;
+             0.0 FreeParam(:var_slope, init=0.0001, lower=0.0)],
         a1 = [0.0, 0.0],
         P1 = 1e7 * Matrix(1.0I, 2, 2)
     )
@@ -228,10 +228,12 @@ end
 
     spec = custom_ssm(
         Z = Z,
-        H = diag_free(3, :σ_obs, init=0.1),
-        T = diag_free([:φ_L, :φ_S, :φ_C], init=0.9, transform=identity),
+        H = diag_free(3, :var_obs, init=0.01),
+        T = [FreeParam(:φ_L, init=0.9, lower=0.0, upper=0.9999) 0.0 0.0;
+             0.0 FreeParam(:φ_S, init=0.9, lower=0.0, upper=0.9999) 0.0;
+             0.0 0.0 FreeParam(:φ_C, init=0.9, lower=0.0, upper=0.9999)],
         R = identity_mat(3),
-        Q = diag_free([:σ_L, :σ_S, :σ_C], init=0.1),
+        Q = diag_free([:var_L, :var_S, :var_C], init=0.01),
         a1 = [0.0, 0.0, 0.0],
         P1 = 1e6 * identity_mat(3)
     )
@@ -343,10 +345,10 @@ end
     spec = local_level()
     y = randn(1, 100) .* 10 .+ 100
 
-    # NormalPrior now takes NamedTuple arguments
+    # NormalPrior now takes NamedTuple arguments (variance parameters)
     prior = NormalPrior(
-        (σ_obs = 5.0, σ_level = 5.0),
-        (σ_obs = 10.0, σ_level = 10.0)
+        (var_obs = 25.0, var_level = 25.0),
+        (var_obs = 100.0, var_level = 100.0)
     )
     ld = SSMLogDensity(spec, y; prior=prior)
 
@@ -503,15 +505,15 @@ end
 
     result = kalman_filter_full(kfparms, y, a1, P1)
 
-    @test haskey(result, :loglik)
-    @test haskey(result, :a)
-    @test haskey(result, :P)
-    @test haskey(result, :v)
-    @test haskey(result, :F)
-    @test haskey(result, :K)
+    @test hasproperty(result, :loglik)
+    @test hasproperty(result, :at)
+    @test hasproperty(result, :Pt)
+    @test hasproperty(result, :vt)
+    @test hasproperty(result, :Ft)
+    @test hasproperty(result, :Kt)
 
-    @test size(result.a) == (1, 51)      # n+1 states: initial + after each obs
-    @test size(result.P) == (1, 1, 51)
+    @test size(result.at) == (1, 50)      # n states: one per observation
+    @test size(result.Pt) == (1, 1, 50)
     @test isfinite(result.loglik)
 end
 
@@ -536,7 +538,7 @@ end
     result = kalman_filter_full(p, y, a1, P1)
 
     # Run smoother
-    alpha_smooth, V_smooth = kalman_smoother(Z, T, result.a, result.P, result.v, result.F)
+    alpha_smooth, V_smooth = kalman_smoother(Z, T, result.at, result.Pt, result.vt, result.Ft)
 
     @test size(alpha_smooth) == (1, 30)
     @test size(V_smooth) == (1, 1, 30)
@@ -544,9 +546,9 @@ end
     # Smoothed variances should be positive
     @test all(V_smooth[1, 1, :] .> 0)
 
-    # Smoothed variance should be <= filtered variance (uses more information)
+    # Smoothed variance should be <= predicted variance (smoothing uses more info)
     for t in 1:30
-        @test V_smooth[1, 1, t] <= result.P[1, 1, t] + 1e-10
+        @test V_smooth[1, 1, t] <= result.Pt[1, 1, t] + 1e-10
     end
 end
 
@@ -572,7 +574,7 @@ end
 
     # Run filter and smoother
     result = kalman_filter_full(p, y, a1, P1)
-    alpha_smooth, V_smooth = kalman_smoother(Z, T, result.a, result.P, result.v, result.F)
+    alpha_smooth, V_smooth = kalman_smoother(Z, T, result.at, result.Pt, result.vt, result.Ft)
 
     # The last smoothed value should match D&K closely (t=100: 798.4)
     # since by then the initialization effect has dissipated
@@ -584,9 +586,9 @@ end
     # Smoothed variances should all be positive
     @test all(V_smooth[1, 1, :] .> 0)
 
-    # Variance should be smaller than filtered variance (smoothing uses more info)
+    # Variance should be smaller than predicted variance (smoothing uses more info)
     for t in 1:size(y, 2)
-        @test V_smooth[1, 1, t] <= result.P[1, 1, t] + 1e-10
+        @test V_smooth[1, 1, t] <= result.Pt[1, 1, t] + 1e-10
     end
 end
 
@@ -611,7 +613,7 @@ end
         Q_new = [θ[2];;]
         p_new = Filthy.KFParms(Z, H_new, T, R, Q_new)
         result = kalman_filter_full(p_new, y, a1, P1)
-        alpha_smooth, _ = kalman_smoother(Z, T, result.a, result.P, result.v, result.F)
+        alpha_smooth, _ = kalman_smoother(Z, T, result.at, result.Pt, result.vt, result.Ft)
         return sum(alpha_smooth)
     end
 
@@ -659,10 +661,11 @@ end
     y = randn(30) .* 10 .+ 100
 
     # Run scalar filter
-    ll, a_filt, P_filt, v, F = Filthy.kalman_filter_full_scalar(Z, H, T, R, Q, a1, P1, y)
+    result_scalar = Filthy.kalman_filter_full_scalar(Z, H, T, R, Q, a1, P1, y)
 
     # Run scalar smoother
-    alpha_smooth, V_smooth = kalman_smoother_scalar(Z, T, a_filt, P_filt, v, F)
+    alpha_smooth, V_smooth = kalman_smoother_scalar(Z, T, result_scalar.at, result_scalar.Pt,
+                                                     result_scalar.vt, result_scalar.Ft)
 
     @test length(alpha_smooth) == 30
     @test length(V_smooth) == 30
@@ -680,7 +683,7 @@ end
 
     p = Filthy.KFParms(Z_m, H_m, T_m, R_m, Q_m)
     result = kalman_filter_full(p, y_m, a1_m, P1_m)
-    alpha_smooth_m, V_smooth_m = kalman_smoother(Z_m, T_m, result.a, result.P, result.v, result.F)
+    alpha_smooth_m, V_smooth_m = kalman_smoother(Z_m, T_m, result.at, result.Pt, result.vt, result.Ft)
 
     @test isapprox(alpha_smooth, vec(alpha_smooth_m), rtol=1e-10)
     @test isapprox(V_smooth, vec(V_smooth_m[1, 1, :]), rtol=1e-10)

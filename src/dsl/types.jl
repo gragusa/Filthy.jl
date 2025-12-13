@@ -54,10 +54,7 @@ Reference to a parameter by name, used for building matrix mappings.
 """
 struct ParameterRef
     name::Symbol
-    transform::Union{Nothing, Function}  # Optional transformation (e.g., ^2 for variance)
 end
-
-ParameterRef(name::Symbol) = ParameterRef(name, nothing)
 
 """
     MatrixElement
@@ -209,3 +206,4 @@ struct CovFree
     prefix::Symbol
     init_σ::Float64
 end
+

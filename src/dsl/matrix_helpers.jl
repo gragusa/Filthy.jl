@@ -9,34 +9,33 @@ export lower_triangular_free, symmetric_free
 export cov_free
 
 """
-    diag_free(names; init=1.0, lower=1e-6, upper=Inf, transform=x->x^2)
-    diag_free(n, prefix; init=1.0, lower=1e-6, upper=Inf, transform=x->x^2)
+    diag_free(names; init=1.0, lower=0.0, upper=Inf)
+    diag_free(n, prefix; init=1.0, lower=0.0, upper=Inf)
 
 Create a diagonal matrix with free parameters on the diagonal.
 
 # Arguments
-- `names`: Vector of parameter names, e.g., `[:σ_level, :σ_slope]`
+- `names`: Vector of parameter names, e.g., `[:var_level, :var_slope]`
 - OR `n, prefix`: Number of elements and prefix, creates `:prefix_1`, `:prefix_2`, etc.
-- `init`: Initial value(s) - scalar or vector
-- `lower`, `upper`: Bounds - scalar or vector
-- `transform`: Transform function (default: `x->x^2` for variance parameters)
+- `init`: Initial value(s) - scalar or vector (variance values)
+- `lower`, `upper`: Bounds - scalar or vector (lower=0.0 triggers asℝ₊ transform)
 
 # Examples
 ```julia
-# 2×2 diagonal with named parameters
-Q = diag_free([:σ_level, :σ_slope], init=[0.1, 0.01])
+# 2×2 diagonal with named parameters (variance values)
+Q = diag_free([:var_level, :var_slope], init=[0.01, 0.0001])
 
 # 3×3 diagonal with auto-generated names
-Q = diag_free(3, :σ, init=1.0)  # Creates :σ_1, :σ_2, :σ_3
+Q = diag_free(3, :var, init=1.0)  # Creates :var_1, :var_2, :var_3
 
 # 1×1 scalar variance
-H = diag_free([:σ_obs], init=10.0)
+H = diag_free([:var_obs], init=100.0)
 # Or equivalently:
-H = scalar_free(:σ_obs, init=10.0)
+H = scalar_free(:var_obs, init=100.0)
 ```
 """
 function diag_free(names::AbstractVector{Symbol};
-                   init=1.0, lower=1e-6, upper=Inf, transform=x->x^2)
+                   init=1.0, lower=0.0, upper=Inf)
     n = length(names)
 
     # Broadcast scalar arguments to vectors
@@ -49,35 +48,35 @@ function diag_free(names::AbstractVector{Symbol};
     fill!(mat, 0.0)
     for i in 1:n
         mat[i, i] = FreeParam(names[i], init=inits[i], lower=lowers[i],
-                               upper=uppers[i], transform=transform)
+                               upper=uppers[i])
     end
     mat
 end
 
 function diag_free(n::Int, prefix::Symbol;
-                   init=1.0, lower=1e-6, upper=Inf, transform=x->x^2)
+                   init=1.0, lower=0.0, upper=Inf)
     names = [Symbol("$(prefix)_$i") for i in 1:n]
-    diag_free(names; init=init, lower=lower, upper=upper, transform=transform)
+    diag_free(names; init=init, lower=lower, upper=upper)
 end
 
 # Single parameter case
-function diag_free(name::Symbol; init=1.0, lower=1e-6, upper=Inf, transform=x->x^2)
-    diag_free([name]; init=init, lower=lower, upper=upper, transform=transform)
+function diag_free(name::Symbol; init=1.0, lower=0.0, upper=Inf)
+    diag_free([name]; init=init, lower=lower, upper=upper)
 end
 
 """
-    scalar_free(name; init=1.0, lower=1e-6, upper=Inf, transform=x->x^2)
+    scalar_free(name; init=1.0, lower=0.0, upper=Inf)
 
 Create a 1×1 matrix with a single free parameter. Convenience wrapper for `diag_free`.
 
 # Example
 ```julia
-H = scalar_free(:σ_obs, init=15.0)
-# Equivalent to: H = [FreeParam(:σ_obs, init=15.0, transform=x->x^2)]
+H = scalar_free(:var_obs, init=225.0)
+# Equivalent to: H = [FreeParam(:var_obs, init=225.0, lower=0.0)]
 ```
 """
-function scalar_free(name::Symbol; init=1.0, lower=1e-6, upper=Inf, transform=x->x^2)
-    [FreeParam(name, init=init, lower=lower, upper=upper, transform=transform)]
+function scalar_free(name::Symbol; init=1.0, lower=0.0, upper=Inf)
+    [FreeParam(name, init=init, lower=lower, upper=upper)]
 end
 
 """
@@ -128,7 +127,7 @@ end
 diag_fixed(value::Real, n::Int) = diag_fixed(fill(value, n))
 
 """
-    lower_triangular_free(n, prefix; init=0.0, lower=-Inf, upper=Inf, transform=identity)
+    lower_triangular_free(n, prefix; init=0.0, lower=-Inf, upper=Inf)
 
 Create a lower triangular matrix with free parameters below and on the diagonal.
 Useful for Cholesky factors.
@@ -143,14 +142,14 @@ L = lower_triangular_free(2, :L)
 ```
 """
 function lower_triangular_free(n::Int, prefix::Symbol;
-                                init=0.0, lower=-Inf, upper=Inf, transform=identity)
+                                init=0.0, lower=-Inf, upper=Inf)
     mat = Matrix{Any}(undef, n, n)
     fill!(mat, 0.0)
 
     for j in 1:n
         for i in j:n
             name = Symbol("$(prefix)_$(i)_$(j)")
-            mat[i, j] = FreeParam(name, init=init, lower=lower, upper=upper, transform=transform)
+            mat[i, j] = FreeParam(name, init=init, lower=lower, upper=upper)
         end
     end
     mat
@@ -158,9 +157,8 @@ end
 
 """
     symmetric_free(n, prefix; init_diag=1.0, init_offdiag=0.0,
-                   lower_diag=1e-6, lower_offdiag=-Inf,
-                   upper_diag=Inf, upper_offdiag=Inf,
-                   transform_diag=x->x^2, transform_offdiag=identity)
+                   lower_diag=0.0, lower_offdiag=-Inf,
+                   upper_diag=Inf, upper_offdiag=Inf)
 
 Create a symmetric matrix with free parameters.
 Diagonal and off-diagonal elements can have different settings.
@@ -174,16 +172,15 @@ Diagonal and off-diagonal elements can have different settings.
 """
 function symmetric_free(n::Int, prefix::Symbol;
                         init_diag=1.0, init_offdiag=0.0,
-                        lower_diag=1e-6, lower_offdiag=-Inf,
-                        upper_diag=Inf, upper_offdiag=Inf,
-                        transform_diag=x->x^2, transform_offdiag=identity)
+                        lower_diag=0.0, lower_offdiag=-Inf,
+                        upper_diag=Inf, upper_offdiag=Inf)
     mat = Matrix{Any}(undef, n, n)
 
     # Diagonal elements
     for i in 1:n
         name = Symbol("$(prefix)_$(i)_$(i)")
         mat[i, i] = FreeParam(name, init=init_diag, lower=lower_diag,
-                               upper=upper_diag, transform=transform_diag)
+                               upper=upper_diag)
     end
 
     # Off-diagonal (lower triangle, upper references same params)
@@ -191,7 +188,7 @@ function symmetric_free(n::Int, prefix::Symbol;
         for i in (j+1):n
             name = Symbol("$(prefix)_$(i)_$(j)")
             param = FreeParam(name, init=init_offdiag, lower=lower_offdiag,
-                              upper=upper_offdiag, transform=transform_offdiag)
+                              upper=upper_offdiag)
             mat[i, j] = param
             mat[j, i] = param  # Symmetric - same parameter reference
         end

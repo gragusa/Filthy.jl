@@ -126,25 +126,29 @@ end
     predict(p::KFParms, y, a1, P1) -> NamedTuple
 
 Low-level prediction using KFParms directly.
+
+Returns predicted states (at = a_{t|t-1}) and related quantities.
 """
 function predict(p::KFParms, y::AbstractMatrix, a1::AbstractVector, P1::AbstractMatrix)
     filt = kalman_filter_full(p, y, a1, P1)
 
     n = size(y, 2)
     obs_dim = size(y, 1)
-    ET = eltype(filt.a)
+    ET = eltype(filt.at)
 
-    # Compute one-step-ahead predictions: ŷₜ|ₜ₋₁ = Z * a[:, t]
+    # Compute one-step-ahead predictions: ŷₜ|ₜ₋₁ = Z * at[:, t]
     yhat = Matrix{ET}(undef, obs_dim, n)
     for t in 1:n
-        yhat[:, t] = p.Z * filt.a[:, t]
+        yhat[:, t] = p.Z * filt.at[:, t]
     end
 
     return (yhat = yhat,
-            a = filt.a,
-            P = filt.P,
-            v = filt.v,
-            F = filt.F,
+            at = filt.at,
+            Pt = filt.Pt,
+            att = filt.att,
+            Ptt = filt.Ptt,
+            vt = filt.vt,
+            Ft = filt.Ft,
             loglik = filt.loglik,
             missing_mask = filt.missing_mask)
 end
@@ -189,6 +193,8 @@ end
     forecast(p::KFParms, y, a1, P1, h) -> NamedTuple
 
 Low-level forecasting using KFParms directly.
+
+Starts from the last filtered state and propagates forward h steps.
 """
 function forecast(p::KFParms, y::AbstractMatrix, a1::AbstractVector, P1::AbstractMatrix, h::Int)
     filt = kalman_filter_full(p, y, a1, P1)
@@ -196,11 +202,11 @@ function forecast(p::KFParms, y::AbstractMatrix, a1::AbstractVector, P1::Abstrac
     n = size(y, 2)
     obs_dim = size(y, 1)
     state_dim = length(a1)
-    ET = eltype(filt.a)
+    ET = eltype(filt.at)
 
-    # Start from a[:, n+1] = E[α_{n+1} | y_{1:n}]
-    a = filt.a[:, n + 1]
-    P = filt.P[:, :, n + 1]
+    # Compute one-step-ahead from last filtered state: a_{n+1|n} = T * a_{n|n}
+    a = p.T * filt.att[:, n]
+    P = p.T * filt.Ptt[:, :, n] * p.T' + p.R * p.Q * p.R'
 
     # Allocate forecast storage
     yhat = Matrix{ET}(undef, obs_dim, h)
@@ -260,9 +266,9 @@ function forecast_paths(p::KFParms, y::AbstractMatrix, a1::AbstractVector, P1::A
     obs_dim = size(y, 1)
     state_dim = length(a1)
 
-    # Start from a[:, n+1] = E[α_{n+1} | y_{1:n}]
-    a_start = filt.a[:, n + 1]
-    P_start = filt.P[:, :, n + 1]
+    # Compute one-step-ahead from last filtered state: a_{n+1|n} = T * a_{n|n}
+    a_start = p.T * filt.att[:, n]
+    P_start = p.T * filt.Ptt[:, :, n] * p.T' + p.R * p.Q * p.R'
 
     # Cholesky factors
     chol_P = cholesky(Symmetric(P_start)).L

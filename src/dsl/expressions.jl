@@ -136,10 +136,12 @@ Z = build_dns_loadings([3, 6, 12, 24, 60, 120])
 
 spec = custom_ssm(
     Z = Z,
-    H = diag_free(6, :σ_obs, init=0.1),
-    T = diag_free([:φ_L, :φ_S, :φ_C], init=0.99, lower=0.0, upper=0.9999, transform=identity),
+    H = diag_free(6, :var_obs, init=0.01),
+    T = [FreeParam(:φ_L, init=0.99, lower=0.0, upper=0.9999) 0.0 0.0;
+         0.0 FreeParam(:φ_S, init=0.99, lower=0.0, upper=0.9999) 0.0;
+         0.0 0.0 FreeParam(:φ_C, init=0.99, lower=0.0, upper=0.9999)],
     R = identity_mat(3),
-    Q = diag_free([:σ_L, :σ_S, :σ_C], init=0.1),
+    Q = diag_free([:var_L, :var_S, :var_C], init=0.01),
     a1 = [0.0, 0.0, 0.0],
     P1 = 1e4 * identity_mat(3)
 )

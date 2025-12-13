@@ -10,10 +10,20 @@ include("smoother_ad.jl")
 
 # Core Kalman filter/smoother exports
 export KFParms, KFParms_static
+export KalmanFilterResult, KalmanFilterResultScalar, SmootherWorkspace
 export STATIC_THRESHOLD, to_static_if_small
-export kalman_loglik, kalman_loglik_scalar
-export kalman_filter_full, kalman_filter_full_scalar
-export kalman_smoother, kalman_smoother_scalar, kalman_filter_and_smooth
+export kalman_loglik, kalman_loglik_scalar, kalman_loglik_static
+export kalman_filter_full, kalman_filter_full_scalar, kalman_filter_full_static
+export kalman_smoother, kalman_smoother_full, kalman_smoother_scalar, kalman_filter_and_smooth
+
+# Accessor methods for KalmanFilterResult
+export parameters
+export obs_matrix, obs_cov, transition_matrix, selection_matrix, state_cov
+export predicted_states, filtered_states
+export variances_predicted_states, variances_filtered_states
+export prediction_errors, variances_prediction_errors
+export kalman_gains, loglikelihood
+export smoothed_states, variances_smoothed_states
 
 # Include DSL submodule (before predict.jl which depends on SSMSpec)
 include("dsl/dsl.jl")
@@ -32,7 +42,7 @@ export missing_to_nan, nan_to_missing, count_missing, ismissing_obs
 export SSMParameter, SSMSpec, FixedValue, ParameterRef
 export param_names, n_params, initial_values, param_bounds
 export build_linear_state_space, objective_function, ssm_loglik
-export local_level, local_linear_trend, ar1, arma, dynamic_factor
+export local_level, local_linear_trend, ar1, arma, dynamic_factor, dns_model
 export custom_ssm, FreeParam, @P
 
 # Matrix helpers
@@ -40,7 +50,7 @@ export diag_free, scalar_free, diag_fixed
 export identity_mat, zeros_mat, ones_mat
 export lower_triangular_free, symmetric_free
 export selection_mat, companion_mat
-export cov_free, CovFree
+export cov_free, CovFree, CovMatrixExpr
 
 # Functional expressions (for DNS, Svensson, etc.)
 export ParamExpr, MatrixExpr
@@ -57,5 +67,9 @@ export FlatPrior, NormalPrior, NormalPriorVec, InverseGammaPrior, CompositePrior
 
 # Optimization (Optimization.jl integration)
 export optimize_ssm, optimize_ssm_with_stderr
+
+# EM algorithm
+export em_ssm, EMResult, em_ssm_full_cov
+export profile_em_ssm, ProfileEMResult
 
 end # module
